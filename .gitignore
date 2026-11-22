@@ -1,0 +1,32 @@
+# LaTeX build files
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.idx
+*.ilg
+*.ind
+*.loa
+*.lof
+*.lol
+*.lot
+*.log
+*.nlo
+*.nls
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*-blx.bib
+*.xdv
+
+# The compiled PDF is built by GitHub Actions (see the Actions tab)
+elteiktdk_en.pdf
+
+# Editors and OS
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,1385 @@
+\documentclass[
+%parspace, % Add vertical space between paragraphs
+%noindent, % No indentation of first lines in each paragraph
+%nohyp, % No hypenation of words
+%twoside, % Double sided format
+%draft, % Quicker draft compilation (also disables images and hyperref links!)
+%final, % Set final to hide todos
+]{elteiktdk}[2024/04/26]
+
+ \usepackage{tikz}
+ \usetikzlibrary{positioning, arrows.meta, fit}
+
+% The minted package is also supported for source highlighting
+%\usepackage[newfloat]{minted}
+
+% Document's metadata
+\title{Conformalized Mean Curvature Flow with Walk on Spheres}
+\date{2026}
+
+% Author(s)' metadata
+\author{Nagy Levente}
+\degree{Computer Science BSc}
+\period{V. grade}
+
+% Superivsor(s)' metadata
+\supervisor{Dr. Fábián Gábor}
+\affiliation{Assistant Professor}
+
+% University's metadata
+\university{Eötvös Loránd University}
+\faculty{Faculty of Informatics}
+\department{Department of Numerical Analysis}
+\city{Budapest}
+\logo{elte_cimer_szines}
+
+% Add bibliography file
+\addbibresource{elteiktdk.bib}
+
+% The document
+\begin{document}
+	
+	% Set document language
+	%\documentlang{hungarian}
+	\documentlang{english}
+	
+	% List of todos (not in the final document)
+	%\listoftodos[\todolabel]
+	%\cleardoublepage
+	
+	% Cover and title page (mandatory)
+	\makecover
+	\cleardoublepage
+	\maketitle
+	
+	% Table of contents (mandatory)
+	\tableofcontents
+	\cleardoublepage
+	
+	% =====================================================================
+	% 1. INTRODUCTION
+	% =====================================================================
+	\chapter{Introduction}
+	\label{ch:intro}
+	
+	In this paper, we will aim to lay the ground of solving the conformalized mean-curvature flow (cMCF) with stochastic methods. In recent years stochastic methods for solving partial differential equations (PDEs) such as the Walk on Spheres method (WoS) and its variants have gained popularity in geometry processing, due to the advantages they have in computational approach. These methods do not need to solve large, often sparse matrices which are computationally expensive and takes up huge storage, like other numerical PDE solvers like Finite Element or Finite differential methods, they in general do not depend on meshes, so they avoid the problem of poor-quality triangulations and so called "mesh soups", and they can be trivially parallelized. 
+	
+	The objective of this work was to investigate whether such stochastic methods can be extended to solve geometric evolution equations, specially the cMCF. The cMCF is a geometric evolution process that deforms genus-0 surfaces towards a spherical configuration, while preserving the conformal structure, avoiding singularities. Unlike conventional elliptic PDE problems, which are typically defined on a fixed domain, geometric evolution equations introduce an additional challenge: the computational domain itself changes over time. Consequently, the numerical method must not only approximate the solution of the governing PDE but also account for the evolving geometry on which the equation is defined.
+	
+	In this work we developed a stochastic formulation of the cMCF based on the Walk on Spheres framework. Our results demonstrate the feasibility of applying stochastic PDE solvers to this class of geometric evolution problems. However, maintaining the quality of the underlying triangulation throughout the evolution remains an unresolved challenge. In particular, the deformation can lead to triangle degeneration, which may negatively affect the accuracy and stability of subsequent stochastic evaluations. Since conventional WoS methods generally do not address mesh quality as part of the PDE-solving process, this introduces an additional difficulty specific to the present application.
+	
+	Finally, we discuss potential approaches to mitigating mesh degeneration and outline several directions for further research. Our primary contribution is to demonstrate the feasibility of extending stochastic PDE-solving techniques beyond conventional fixed-domain problems to geometric evolution equations, opening up possibilities for geometry processing.
+	
+	
+	% =====================================================================
+	% 2. BACKGROUND AND RELATED WORK  (short; everything else is introduced
+	%    just in time, where it is first needed)
+	% =====================================================================
+	\chapter{Background and related work}
+	\label{ch:background}
+	
+	In this chapter, we introduce the fundamental concepts and mathematical tools used throughout this work, and review the relevant background and related literature.
+	
+	\section{Preliminaries and notation}
+	\label{sec:notation}
+	
+	\begin{definition}[Laplace operator]
+		Let $\Omega \subset \mathbb{R}^d$ $(d \in \mathbb{N^+})$ be a bounded domain, $u: \Omega \rightarrow \mathbb{R}$, $u \in \mathfrak{C}^2$. The Laplace operator in Cartesian coordinates is:
+		\begin{equation}
+			\Delta u = \nabla \cdot \nabla u = \sum^n_{i=1} \frac{\partial^2 u}{\partial x_i^2}
+		\end{equation}
+		
+	\end{definition}
+	
+	\begin{definition}[Screened Poisson equation]
+		\label{screenedPoi}
+		Let $\Omega \in \mathbb{R}^d$ $(d \in \mathbb{N^+})$ be a bounded domain, $u: \Omega \rightarrow \mathbb{R}$, $u \in \mathfrak{C}^2$, $\sigma > 0$ a "screening" constant term and $f$ an arbitrary "source" function. The screened Poisson equation with Dirichlet boundary values is then:
+		\begin{equation}
+			\begin{cases}
+				\Delta u(x) - \sigma u(x) = -f, & x \in \Omega, \\
+				u(x) = g(x) & x \in \partial \Omega 
+			\end{cases}
+		\end{equation}   
+	\end{definition}
+	
+	\begin{remark}
+		In case of $\sigma = 0$ we get a simple \textit{Poisson equation} $\Delta u = -f$, and if $f = 0$ as well, we get the \textit{Laplace equation} $\Delta u = 0$.
+	\end{remark}
+
+	
+	\begin{definition}[Green's function]
+		Let $\Omega \subset \mathbb{R}^d$ $(d \in \mathbb{N^+})$ be a bounded domain.
+		The Green's function $G: \Omega \times \Omega \rightarrow
+		\mathbb{R}$ associated with the Laplace operator is defined by
+		\begin{equation}
+			\begin{cases}
+				-\Delta_x G(x,y) = \delta_y(x),
+				& x \in \Omega,\\
+				G(x,y) = 0,
+				& x \in \partial\Omega,
+			\end{cases}
+		\end{equation}
+		where $\delta_y$ denotes the Dirac delta distribution
+		centered at $y \in \Omega$.
+	\end{definition}
+	
+	\begin{definition}[Yukawa potential]:
+		\label{yukawa}
+		Let $\sigma > 0$ be a constant screening parameter.
+		The screened Green's function $G_\sigma$ is defined by
+		\begin{equation}
+			\begin{cases}
+				(-\Delta_x+\sigma)G_\sigma(x,y)
+				= \delta_y(x), & x \in \Omega,\\
+				G_\sigma(x,y)=0, & x \in \partial\Omega.
+			\end{cases}
+		\end{equation}
+	\end{definition}
+	
+	\begin{definition}[Surface and immersion] 
+		Let \(M\) be a compact, connected, two-dimensional smooth manifold without boundary (a closed surface), and let
+		\[
+		\Phi:M\to\mathbb{R}^3
+		\]
+		be a smooth immersion. In the experiments presented in this paper, \(M\) is assumed to be homeomorphic to the sphere \(S^2\), a surface of genus zero.
+	\end{definition}
+	
+	\begin{definition}[Induced metric]
+		The metric induced by $\Phi$ is the pullback of the Euclidean inner product,
+		\begin{equation}
+			(g_\Phi)_{ij} = \partial_i\Phi\cdot\partial_j\Phi ,
+		\end{equation}
+		where $\partial_i$ are derivatives with respect to local coordinates on~$M$.
+	\end{definition}
+	
+	For a time-dependent family $\Phi_t$ we write $g_t$ for the metric induced
+	by $\Phi_t$, and $\det g_t$ for its determinant in local coordinates.
+	The quantity $\sqrt{\det g_t}$ is the area element of the surface $dA_t$.
+	
+	\begin{definition}[Laplace--Beltrami operator]
+		\label{lb}
+		For a metric $g$ and a smooth function $f$ on $M$,
+		\begin{equation}
+			\Delta_g f = \frac{1}{\sqrt{\det g}}\,
+			\partial_i\!\left(\sqrt{\det g}\; g^{ij}\partial_j f\right).
+		\end{equation}
+	\end{definition}
+
+	
+	\section{Walk on Spheres}
+	
+	Partial differential equations in geometry processing are traditionally solved
+	with mesh- or grid-based numerical methods, such as the finite element or
+	finite difference method. These methods discretize the whole domain, which is
+	costly in both time and memory, and their accuracy depends on the quality of
+	the discretization: a poor mesh (for example one with badly shaped or
+	degenerate elements) directly introduces error into
+	the solution.   
+	 
+	\emph{Walk on Spheres} (WoS) avoids this. The method goes back to
+	\textcite{10.1214/aoms/1177728169}, and was brought to
+	geometry processing by \textcite{Sawhney:2020:MCG}. It needs no volumetric
+	mesh and no global linear solve. To estimate the solution at a point $x$,
+	consider a ball $B_r(x)$ with center $x$ and radius $r$ fully contained within the domain.
+	The equation
+	\begin{equation} \label{screenedPoissonIntegral}
+		u(x) = \frac{c_r}{\left|\partial B_r(x)\right|}\int_{\partial B_r(x)} u(y) \, dy + \int_{B_r(x)} f(z)G^{\sigma}(x,z) \, dz
+	\end{equation}
+	holds for the screened Poisson equation, where $\left|\partial B_r(x)\right|$ is the surface area of the ball $B_r(x)$, and $G^{\sigma}$ is the \textit{Yukawa potential} which is a special case of the \textit{Green's function} and $c_r$ is a normalization factor accounting for the screening effect over the sphere. In case of a simple Poisson equation we use the simple \textit{Green's function} and leave out $c_r$. In case of a Laplace equation the second integral can be left out, because its purpose is sampling background information in the domain, and the Laplace equation only holds information at the boundaries.
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.5]{images/wos_example.png}
+		\caption{An example of a single walk from a point in case of a Laplace equation. $\Omega$ is the inside of the domain, $\partial \Omega$ is the boundary, and $\partial \Omega_\epsilon$ is the $\epsilon$ range to the boundary which also acts as hitting the boundary. $x_0$ is the inital starting point and $\overline{x}_4$ is the point where we terminated the walk. In case of a Poisson equation, we also take a sample $y_k$ inside the balls $B_r(x_k)$}
+		\label{fig:wos_example}
+	\end{figure}
+	
+	The equation \ref{screenedPoissonIntegral} can be thought as the following then: We take a sample point $x_0$, start many walks from this point. Terminate each walk when they get $\epsilon$ close to the boundary, and gather information alongside the walk, and when we terminate. Average these walks, and we got the value of a point in our domain. In case of a simple Laplace equation with dirichlet boundary conditions \textit{Kakutani's Princliple} (for derivation: \ref{app:kakutani}) states, that
+	\begin{equation}
+		u(x) = \mathbb{E}\left[g(X_\tau)\right]
+	\end{equation}
+	Where $\tau$ is the first exit time of the walk and $W$ is the \textit{Wiener process} (or the \textit{Brownian motion}). The Mean Value Property \textcite{axler2001harmonic} then states that
+	\begin{equation}
+		u(x) = \frac{1}{|\partial B_r(x)|}\int_{\partial B_r(x)} u(y) \, dy
+	\end{equation}
+	This is the core part of this method and can be seen in the equation \ref{screenedPoissonIntegral} as well. The estimator is for a sample point is then just 
+	\begin{equation}
+		u(x_0) = \frac{1}{N} \sum_{i=1}^{N} \hat{u_f}(x_0)
+	\end{equation} 
+	
+	where $N$ is the number of walk and in case of a screened Poisson equation with Dirichlet boundary values $\hat{u_0}$ is given by:
+	
+	\begin{equation}
+		\widehat{u}_f(x_k) :=
+		\begin{cases}
+			g(\overline{x}_k), & x_k \in \partial\Omega_\epsilon \\
+			\widehat{u}_f(x_{k+1}) + \underbrace{\left| B_r(x_k) \right| f (y_k) G^{\sigma}(x_k, y_k)}_{\text{Poisson part}}, & \text{otherwise.}
+		\end{cases}
+	\end{equation}
+	
+	This can be futher modified with Probability Density Functions (PDF) to reduce the error. The stohastic representation of screened Poisson equation using the \textit{Feynman--Kac} formula is the following:
+	\begin{equation}
+		u(x) = \mathbb{E}\left[e^{-\sigma\tau} g(X_{\tau}) + \int_0^{\tau} e^{-\sigma t} f(X_t) \, dt\right]
+	\end{equation}
+	
+	\section{Walk on Spheres on surfaces}
+	
+	Classical WoS solves PDEs on volumetric domains in Euclidean space, whereas
+	we need to solve a PDE on a two-dimensional surface embedded in
+	$\mathbb{R}^3$. \textcite{Sugimoto:2024:PWoS} introduced \emph{Projected Walk
+	on Spheres} (PWoS), which adapts WoS to surfaces using the closest point
+	method: the walk takes ordinary WoS steps in $\mathbb{R}^3$ and projects every
+	sample back to the surface.
+	
+	To make the projection well defined, the sphere radius must be small enough
+	that the closest point on the surface is unique inside the ball. For this, the
+	algorithm first builds a medial axis point cloud of the surface, which gives a
+	local feature size $l$ at every point. The walk is then the following:
+	\begin{enumerate}
+		\item Start from a point $x_0$ on the surface.
+		\item Take the largest admissible sphere around $x_k$, with radius $r_k$
+		given by the distance to the nearest medial axis point (and, if there is a
+		Dirichlet boundary, the distance to it, whichever is smaller).
+		\item Sample a point $y_k$ uniformly on the ball $\partial B_{r_k}(x_k)$ and if needed sample points within the ball for source term estinamtion.
+		\item Project it back to the surface, $x_{k+1} = \mathrm{cp}_S(y_k)$.
+		\item Repeat steps 2--4 until the walk gets within $\epsilon$ of the Dirichlet
+		boundary, or is terminated by Russian roulette.
+	\end{enumerate}
+	
+	\begin{figure}[H]
+		\begin{subfigure}{0.5\textwidth}
+			\includegraphics[scale=0.4]{images/medialaxispointcloudoutside.png}
+			\caption{Medial axis points outside of the surface}
+			\label{fig:medialaxispointcloudoutside}
+		\end{subfigure}
+		\begin{subfigure}{0.5\textwidth}
+			\includegraphics[scale=0.25]{images/medialaxispointcloudinside.png}
+			\caption{Medial axis points inside of the surface}
+			\label{fig:medialaxispointcloudinside}
+		\end{subfigure}
+		\caption{The figures above shows the 3D medial axis point cloud generated for Spot \textcite{crane2013robust}. The point cloud contains 10000 points.}
+	\end{figure}
+	
+	\begin{remark}
+		We do not go in detail of generating the medial axis point cloud. The algorithm to do so is described in great details in the paper about PWoS by \textcite{Sugimoto:2024:PWoS}
+	\end{remark}
+	
+	% =====================================================================
+	% 3. THE FLOW
+	% =====================================================================
+	\chapter{Conformalized Mean-Curvature Flow}
+	\label{ch:cmcf}
+	
+	\section{Regular Mean-Curvature Flow}
+	
+	Mean curvature flow can be thought of as a flow that pushes a point on a surface towards the average positions of its neighbors. This flow have the effect of smoothing the geometry.
+	
+	\begin{definition}[MCF]
+		Let $M$ be a two dimensional manifold, let $\Phi_t: M \rightarrow \mathbb{R}^3$ be a smooth family of immersions, and let $g_t(\cdot,\cdot)$ be the metric induced by the immersions at time $t$. We say that $\Phi_t$ is a solution to the mean-curvature flow if:
+		\begin{equation}
+			\frac{\partial \Phi_t}{\partial t} = \Delta_t \Phi_t
+		\end{equation}
+		where $\Delta_t$ is the Laplace-Beltrami operator \ref{lb} definied with respect to $g_t$.
+	\end{definition}
+	
+	\section{Conformalization of the flow}
+	\label{sec:cmcf-def}
+	
+	In \citeyear{kazhdan2012nonsingular} \textcite{kazhdan2012nonsingular} showed, that the regular mean-curvature flow can be made non-singular by conformalizing the metric. 
+	
+	\begin{definition}[cMCF]
+		Let $(M,h)$ be a two dimensional Riemann manifold, let $\Phi_t: M \rightarrow \mathbb{R}^3$ be a smooth family of immersions, and let $g_t(\cdot,\cdot)$ be a metric included by the immersion at time $t$ and also let us assumn that in this case $h = g_0$. We then say that $\Phi_t$ is a solution to the conformalized mean curvature flow if:
+		\begin{equation}
+			\label{cMFC}
+			\frac{\partial\Phi_t}{\partial t} = \sqrt{\left| g_t^{-1} g_0\right|}\Delta_{g_0}\Phi_t
+		\end{equation}
+		Where $\Delta_{g_0}$ is the Laplace-Beltrami operator with respect to $g_0$.
+	\end{definition}
+	
+	\begin{remark}
+		For simplicity in the future let 
+		\begin{equation}
+			\label{alpha}
+			\alpha(x,t) = \sqrt{\left| g_t^{-1} g_0\right|}, \qquad \Delta := \Delta_{g_0}
+		\end{equation}
+	\end{remark}	
+	 
+	\begin{remark}
+		$\alpha(x,t)$ is essentially the volume of $x$ at the beginning, divided by the volume of $x$ at time $t$:
+	\end{remark}
+	
+	\begin{equation}
+		\label{alphaaa}
+		\alpha(x,t) = \sqrt{\left| g_t^{-1} g_0\right|} = \sqrt{\left|\frac{g_0}{g_t}\right|} = \frac{\sqrt{\det g_0}}{\sqrt{\det g_t}} = \frac{dA_0}{dA_t}
+	\end{equation}
+	
+	\section{Why cMCF?}
+	
+	Using the basic MCF introduces numerical instabilities while transforming the model, resulting in singularities.
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.8]{images/spotbad.png}
+		\caption{Regular mean-curvature flow pinches the neck of Spot, resulting in a singularity. Picture from: \textcite{wong2020application}}
+		\label{fig:badspot}
+	\end{figure}
+	The conformalized mean-curvature flow addresses this problems and reduces the numerical instability by introducing $\alpha(x,t)$ \ref{alpha}, the conformalization of the metric.
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.25]{images/spotgood.png}
+		\caption{Conformalized mean-curvature flow avoids pinching the neck of Spot.}
+		\label{fig:goodspot}
+	\end{figure}
+	
+	
+	% =====================================================================
+	% 4. METHOD
+	% =====================================================================
+	\chapter{Solving cMCF with Walk on Spheres}
+	\label{ch:method}
+	
+	\section{Idea}
+	
+	The equation \ref{cMFC} can be thought as the heat equation
+	
+	\begin{equation}
+		\frac{\partial \Phi}{\partial t} = \alpha(x,t)\Delta_{g_0}\Phi
+	\end{equation}
+	
+	if we use the notation \ref{alpha}. In a recent paper \textcite{zhou2026gridfree} managed a way to solve inhomogeneous heat equation with WoS, however, they only did so with a constant diffusivity $\kappa$, where in our case it's the varying $\alpha(x,t)$. In the paper they mention at the end, that they yet to cover a solution for the heat equation with a non constant diffusivity term. Our goal is not focused of creating such a method, so we need to search for a other way to solve the cMFC with WoS.	
+	
+	To begin, if we transform the equation \ref{cMFC} to a screened Poisson equation (for full derivation see: \ref{app:cmfctopoi})
+	
+	\begin{equation}
+		\label{cMFCPossion}
+		\left[\Delta - \sigma(x,t)\right]\Phi^{n+1} = -f(x,t,\Phi),
+	\end{equation} 
+	
+	we can see that this equation can almost be solved with the traditional approach of the WoS, our only problem is still, the non constant screening term $\sigma$. This problem can be seen when we wite up the stohastic formulation of the equation using Feynman-kac:
+	
+	\begin{equation}
+		\Phi^{n+1}(x) = \mathbb{E}\left[\int_{0}^{\infty} e^{-\int_{0}^{t} \sigma(X_s) \, ds} f(X_t) \, dt\right]
+	\end{equation}
+	Note, that since we will be working on a closed surface, there is no boundary, so we will be left with this shortened form of the stohastic representation.
+	 
+	When we expand the right side of the equation we know that there is also a $\sigma$ term in the source term as well, however its not a problem to solve such screened Poisson equation with varying coefficients in the source term. Following this idea \textcite{sawhneyseyb22gridfree} developed a method to solve spatially varying coefficient PDEs with the WoS, by transforming the equation, such that the varying coefficients all gets put in the source term. There is multiple ides presented by them, but the only important one to us is the \textit{Delta tracking} method \textcite{raab2008unbiased}, which gets rid of the varying screening term in the left side of the equation, while still holding as a screened Poisson equation, resulting in a equation that the WoS can be used to solve.
+	
+	\section{Delta tracking}
+	
+	If we introduce a coefficient $\overline{\sigma} \geq \underset{x \in \Omega}{\sup} \sigma(x,t)$, and than add and substract $\overline{\sigma} \Phi^{n+1}$ from the right side, so
+	
+	\begin{equation}
+		\Delta \Phi^{n+1} - \overline{\sigma}\Phi^{n+1} + \overline{\sigma}\Phi^{n+1} - \sigma(x,t)\Phi^{n+1} = -f(x,t,\Phi),
+	\end{equation}
+	
+	and than rearrange the equation, we get
+	
+	\begin{equation}
+		\left(\Delta - \overline{\sigma}\right)\Phi^{n+1} + \left(\overline{\sigma} - \sigma(x,t)\right)\Phi^{n+1} = -f(x,t,\Phi),
+	\end{equation}
+	
+	\begin{equation}
+		\left(\Delta - \overline{\sigma}\right)\Phi^{n+1}  = - \underbrace{\left[f(x,t,\Phi) + \left(\overline{\sigma} - \sigma(x,t)\right)\Phi^{n+1}\right]}_{\overline{f}(x,t,\Phi)}.
+	\end{equation}
+	
+	We are left with a screened Poisson equation with a constant screening term, the WoS can solve. Thought now, $\Phi^{n+1}$ appears on the right side of the equation, so we will have to find a way to handle this recursive term.
+	
+	We can also see from the stohastic formulation that we now have $e^{-\overline{\sigma}t}$ that does not varies:
+	\begin{equation}
+		\Phi^{n+1}(x) = \mathbb{E}\left[\int_{0}^{\infty} e^{-\overline{\sigma}t} \overline{f}(W_t, \Phi) \, dt\right]
+	\end{equation}
+	
+	\section{Closest point extension}
+	\label{sec:method-cpm}
+	
+	The walks have to stay on the surface $S=\Phi_0(M)\subset\mathbb{R}^3$, while Walk on
+	Spheres works with balls in $\mathbb{R}^3$. We connect the two with the closest point
+	extension. Let
+	\begin{equation}
+		\operatorname{cp}_S(x)=\operatorname*{arg\,min}_{y\in S}\|x-y\|_2 ,
+	\end{equation}
+	let $\mathrm{med}(S)$ be the medial axis (the points with more than one closest point on $S$) and
+	let $\mathrm{lfs}(y)$ be the distance of $y\in S$ from $\mathrm{med}(S)$. On the neighbourhood
+	\begin{equation}
+		\mathcal N(S)=\left\{x\in\mathbb{R}^3 : \|x-\operatorname{cp}_S(x)\|_2<\mathrm{lfs}\big(\operatorname{cp}_S(x)\big)\right\}
+	\end{equation}
+	the closest point is unique. The extension of a surface function $u$ is
+	$Eu(x)=u(\operatorname{cp}_S(x))$. It is constant in the normal direction, and
+	\begin{equation}
+		\Delta_{g_0}u(y)=\Delta[Eu](y),\qquad y\in S .
+	\end{equation}
+	Hence the surface equation $(\Delta_{g_0}-\overline\sigma)\Phi^{n+1}=-\overline f$ can be
+	replaced by the embedding equation
+	\begin{equation}
+		\left(\Delta-\overline\sigma\right)u = -E\overline f + g \quad\text{in }\mathcal N(S),
+		\qquad u=E\Phi^{n+1},
+	\end{equation}
+	where $g$ compensates that $\Delta[Eu]$ is not constant in the normal direction and $g|_S=0$.
+	Following \textcite{Sugimoto:2024:PWoS} we take $g\equiv0$. This is exact on $S$ and
+	introduces a bias away from it, which decreases with the size of the balls.
+	The equation is solved componentwise for the three coordinates of $\Phi$.
+	
+	\section{Integral form on the surface}
+	\label{sec:method-integral}
+	
+	Let $x\in S$ and let $B_r(x)\subset\mathcal N(S)$. The mean value formula of the
+	screened Poisson equation on the ball is
+	\begin{equation}
+		\label{theint}
+		u(x)=c_r\,\frac{1}{|\partial B_r(x)|}\int_{\partial B_r(x)}u(y)\,dy
+		+ \int_{B_r(x)}G^{\overline\sigma}_r(x,z)\,\overline f(z)\,dz ,
+	\end{equation}
+	where, with $\rho=\|x-z\|$ and $\kappa=r\sqrt{\overline\sigma}$ (for full derivation see: \ref{app:cr}), 
+	\begin{equation}
+		G^{\overline\sigma}_r(x,z)=\frac{\sinh\!\big(\sqrt{\overline\sigma}\,(r-\rho)\big)}{4\pi\rho\,\sinh\!\big(\sqrt{\overline\sigma}\,r\big)},
+		\qquad
+		c_r=\frac{\kappa}{\sinh\kappa}<1 .
+	\end{equation}
+	Both integrals are ordinary Euclidean integrals over the sphere and the ball. Substituting everything into the integral we get
+	\begin{equation}
+		\label{integralform}
+		\begin{gathered}
+			\Phi^{n+1}(x) =
+			\frac{c_r}{|\partial B_r(x)|}
+			\int_{\partial B_r(x)}
+			\Phi^{n+1}(\hat{y})\,dy \, +\\[6pt]
+			+ \int_{B_r(x)}G^{\overline\sigma}_r(x,z)
+			\underbrace{\Big[
+				\sigma(\hat{z})\Phi^n(\hat{z})
+				+ \big(\overline\sigma-\sigma(\hat{z})\big)
+				\Phi^{n+1}(\hat{z})
+				\Big]}_{\overline{f}}\,dz .
+		\end{gathered}
+	\end{equation}
+	
+	\begin{remark}
+		For simplicity we will use a hat as the notation for $\hat{x} := \operatorname{cp_S}(x)$
+	\end{remark}
+	
+	\section{Collisions and termination}
+	\label{sec:method-rr}
+	
+	From the equation \ref{integralform} above, we can easily express the first integral with the division by $|\partial B_r(x)|$ as a expected value:
+	
+	\begin{equation}
+		\label{firstterm}
+		\frac{c_r}{|\partial B_r(x)|}\int_{\partial B_r(x)}\Phi^{n+1}(\hat{y})\,dy = c_r\mathbb{E}_{y \sim \partial B_r(x)}\left[\Phi^{n+1}(\hat{y})\right],
+	\end{equation}
+	and by applying the formula \ref{integralform} with $\Phi^{n+1}\equiv1$ and $\overline f\equiv\overline\sigma$, and using \ref{firstterm}, gives the integral of the Yukawa potential.
+	\begin{equation}
+		1 = c_r \cdot 1 + \int_{B_r(x)} G^{\overline{\sigma}}_r \cdot \overline{\sigma} \, dz
+	\end{equation}
+		\begin{equation}
+		1 - c_r = \overline{\sigma} \int_{B_r(x)} G^{\overline{\sigma}}_r \, dz
+	\end{equation}
+	\begin{equation}
+		\int_{B_r(x)}G^{\overline\sigma}_r\,dz = \frac{(1-c_r)}{\overline\sigma},
+	\end{equation}
+	so the probability density on the ball is
+	\begin{equation}
+		p_G(z)= \frac{\overline\sigma}{(1-c_r)} G^{\overline\sigma}_r(x,z)
+	\end{equation}
+	because
+	\begin{equation}
+		\int_{B_r(x)} p_G(z) \, dz = \frac{\overline{\sigma}}{1 - c_r} \cdot \int_{B_r(x)} G^{\overline\sigma}_r(x,z) \, dz = \frac{\overline{\sigma}}{1 - c_r} \cdot \frac{(1-c_r)}{\overline{\sigma}} = 1
+	\end{equation}
+	With this probability density function, we can now write up the second integral of the equation \ref{integralform} similarly to \ref{firstterm}:
+	\begin{equation}
+		\int_{B_r(x)} G^{\overline{\sigma}}_r \overline{f} \, dz = \int_{B_r(x)} \overline{\sigma}G^{\overline{\sigma}}_r \left[\left(\frac{\sigma(\hat{z})}{\overline\sigma}\right) \Phi^n + \left(1 - \frac{\sigma(\hat{z})}{\overline{\sigma}}\right)\Phi^{n+1}\right] \, dz,
+	\end{equation}
+	with $p(z)=\frac{\sigma(\hat{z})}{\overline\sigma} \in[0,1]$ and multiplying and dividing by $(1 - c_r)$ we can write:
+	\begin{equation}
+		\label{secondterm}
+		(1 - c_r)\int_{B_r(x)} \underbrace{\frac{1}{1 - c_r}\overline{\sigma} G^{\overline{\sigma}}_r}_{ = p_G} \left[p(z) \Phi^n + (1 - p(z)) \Phi^{n+1}\right]  
+	\end{equation}
+	Combining \ref{firstterm} and \ref{secondterm} we get the following:
+	\begin{equation}
+		\begin{gathered}
+			\Phi^{n+1}(x)=c_r\,\mathbb{E}_{y \sim \partial B_r(x)}\!\left[\Phi^{n+1}(\hat{y})\right] + \\[6pt]
+			+(1-c_r)\,\mathbb{E}_{z\sim p_G}\!\left[\underbrace{p(z)\,\Phi^{n}(\hat{z})}_{\text{real collision}}
+			+\underbrace{\big(1-p(z)\big)\Phi^{n+1}(\hat{z})}_{\text{null-collision}}\right]
+		\end{gathered}
+	\end{equation}
+	The three weights $P_1 = c_r$, $P_2 = (1-c_r)p(z)$ and
+	$P_3 = (1-c_r)(1-p(z))$ sum to one, so they are branching probabilities of one step of the walk:
+	\begin{enumerate}
+		\item with probability $c_r$ there is no collision: sample $y$ uniformly on $\partial B_r(x)$
+		and continue from $\hat{y})$;
+		\item otherwise a collision happens inside the ball at $z\sim p_G$, and
+		\begin{enumerate}
+			\item with probability $p(z)$ it is a \emph{real} collision: the walk terminates and returns $\Phi^n(\hat{z})$;
+			\item with probability $1-p(z)$ it is a \emph{null} collision: the walk continues from $\hat{z}$.
+		\end{enumerate}
+	\end{enumerate}
+	The estimator of $\Phi^{n+1}(x)$ is the returned value $\Phi^n(\hat{z})$ at the
+	real collision, averaged over $N_p$ walks. Since the source term has been absorbed into
+	the collision, no separate Poisson term is estimated, and termination needs no Russian
+	roulette with zero contribution.
+	
+	
+	\begin{remark}
+		We already defined in \ref{alphaaa} $\alpha(x,t) = dA_0 / dA_t$ and since than we defined $\sigma(x,t) = 1 / \delta\alpha(x,t)$ so following this notation
+	\end{remark}
+
+	\begin{equation}
+		\sigma(x,t) = \frac{1}{\delta\alpha(x,t)} = \frac{1}{\delta \frac{dA_0}{dA_t}} = \frac{dA_t}{\delta dA_0}
+	\end{equation}
+	
+	% =====================================================================
+	% 5. IMPLEMENTATION
+	% =====================================================================
+	\chapter{Implementation}
+	\label{ch:impl}
+	
+	The solver was implemented in C++17 and compiled with GCC 15.2.0. For fast closest-point queries I used mantis \cite{mantis}. For visualization I used Raylib 5.5 \cite{raylib55}. The architecture of the solver is shown in Figure~\ref{fig:architecture}.
+
+	\begin{figure}[ht]
+		\centering
+		\begin{tikzpicture}[
+			node distance=6mm and 9mm,
+			box/.style={draw, rounded corners=2pt, align=center, minimum height=10mm, inner sep=4pt, font=\small},
+			arr/.style={-{Stealth[length=2mm]}}
+			]
+			% top row
+			\node[box] (obj) {load \texttt{.obj}};
+			\node[box, right=of obj] (pre) {pre-solver:\\ $A_0$, acceleration structure,\\ medial axis, feature size};
+			\node[box, right=of pre] (sig) {$\sigma_n$, $\bar{\sigma}$};
+			\node[box, right=of sig] (p0) {pass 0:\\ walks from every vertex};
+			% bottom row
+			\node[box, below=of p0] (filt) {passes $1,\dots,K$:\\ mean value filtering};
+			\node[box, below=of sig] (norm) {normalization,\\ $\Phi^{n+1}$};
+			\node[box, left=of norm] (log) {logging,\\ rendering};
+			
+			\draw[arr] (obj) -- (pre);
+			\draw[arr] (pre) -- (sig);
+			\draw[arr] (sig) -- (p0);
+			\draw[arr] (p0) -- (filt);
+			\draw[arr] (filt) -- (norm);
+			\draw[arr] (norm) -- node[left, font=\small] {$n \leftarrow n+1$} (sig);
+			\draw[arr] (norm) -- (log);
+			
+			\node[draw, dashed, rounded corners=3pt, inner sep=6pt, fit=(sig) (p0) (filt) (norm),
+			label={[font=\small]above right:iteration loop}] {};
+		\end{tikzpicture}
+		\caption{Architecture of the solver.}
+		\label{fig:architecture}
+	\end{figure}
+	
+	\section{Data structure}
+	
+	As we have already said, cMCF is only useful when we work with meshes. For this reason the surface is stored as a vector of vertices and a vector of triangles.
+	\begin{lstlisting}[language={C++}]
+		struct Surface{
+			std::vector<Vertex> vertices;
+			std::vector<Triangle> triangles;
+		};
+	\end{lstlisting}
+	A \texttt{Vertex} holds one \texttt{Vector3} (the position), and a \texttt{Triangle} holds three integers \texttt{v0}, \texttt{v1}, \texttt{v2}, the indices of its corners. The program can currently read only \texttt{.obj} files: the loader keeps the \texttt{v} lines as vertices and the \texttt{f} lines as triangles (only the position index of every corner is used), so the input has to be a triangle mesh.
+	
+	During a walk the solver has to evaluate functions that are known only at the vertices ($\Phi^n$, $\sigma_n$, the feature size) at arbitrary points of the surface. For this every surface point is stored together with its interpolation weights:
+	\begin{lstlisting}[language={C++}]
+		struct Interp {
+			int v[3];      // vertex indices
+			float w[3];    // weights, w[0] + w[1] + w[2] = 1
+		};
+	\end{lstlisting}
+	The function \texttt{closestInterp} asks mantis for the closest surface point of a query point and converts the answer into an \texttt{Interp}. Mantis reports whether the closest point lies on a vertex, on an edge or inside a triangle. In the first case the weight of that vertex is $1$, in the second the point is interpolated linearly between the two end points of the edge, and in the third the weights are the barycentric coordinates of the point in the triangle. A function $f$ given at the vertices is then evaluated as
+	\[
+	f(y) \approx w_0 f(v_0) + w_1 f(v_1) + w_2 f(v_2),
+	\]
+	which is done by \texttt{interpScalar} for scalars and by \texttt{interpVec} for vectors.
+	
+	The parameters of the solver can be set from the command line; they are listed in Table~\ref{tab:params}.
+	
+	\begin{table}[ht]
+		\centering
+		\begin{tabular}{l l l}
+			\hline
+			Parameter & Example value & Meaning \\
+			\hline
+			\texttt{delta} & $5 \cdot 10^{-4}$ & time step $\delta$ of one iteration \\
+			\texttt{iters} & $300$ & number of iterations \\
+			\texttt{Ns} & $30000$ & number of samples of the medial axis point cloud \\
+			\texttt{lfsMin} & $0.01$ & lower bound of the feature size (ball radius) \\
+			\texttt{Np} & $50$ & walks per vertex in the first pass \\
+			\texttt{K} & $3$ & number of filter passes \\
+			\texttt{Nw} & $50$ & filtered estimates per vertex in one filter pass \\
+			\texttt{Nv} & $5$ & ball samples of one filtered estimate \\
+			\texttt{maxSteps} & $4096$ & step limit of one walk \\
+			\hline
+		\end{tabular}
+		\caption{Parameters of the solver.}
+		\label{tab:params}
+	\end{table}
+	
+	\section{Pre-solver calculations}
+	
+	Before starting the iteration loop, the solver does some pre-calculations. The first one is the vertex area $A_0$ of the original surface:
+	\begin{lstlisting}[language={C++}]
+		for (size_t i = 0; i < N; ++i)
+		{
+			P_orig[i] = surface.vertices[i].vert;
+		}
+		
+		const std::vector<float> A_orig = vertexAreas(surface, P_orig);
+		const float targetArea = std::accumulate(A_orig.begin(), A_orig.end(), 0.0f);
+	\end{lstlisting}
+	\texttt{vertexAreas} gives every vertex one third of the area of each triangle it belongs to, so the areas of the vertices add up to the area of the surface. The total area (\texttt{targetArea}) is saved, because the normalization at the end of every iteration rescales the shape back to it.
+	
+	Everything else that depends on the geometry is built by \texttt{rebuildBase}:
+	\begin{enumerate}
+		\item \textbf{Acceleration structure.} The vertices and triangles are handed to mantis, which builds the structure used by every closest-point query.
+		\item \textbf{Medial axis point cloud.} \texttt{Ns} points are sampled, and from them a point cloud $M$ that approximates the medial axis of the surface is computed.
+		\item \textbf{Local feature size.} The radius of the ball a walk may use at vertex $x_i$ is
+		\[
+		R_i = \max\bigl(0.9 \cdot \min_{m \in M} \lVert m - x_i \rVert,\ \texttt{lfsMin}\bigr).
+		\]
+		The factor $0.9$ keeps the ball away from the medial axis, so the closest-point projection of its points is well defined, the lower bound keeps the walks from stalling where the surface is very thin.
+		\item \textbf{Initial state.} $A_0$ is stored and the embedding is initialized as $\Phi^0 = $ the original vertex positions.
+	\end{enumerate}
+	All of this is computed only once. The walks always live on the original surface $S_0$, which never changes, an iteration only changes the embedding $\Phi^n$, which is stored as one \texttt{Vector3} per vertex.
+	
+	\section{Iteration loop}
+	
+	One iteration computes $\Phi^{n+1}$ from $\Phi^{n}$. It consists of $K+1$ passes over the vertices: pass $0$ estimates the solution with walks, and passes $1, \dots, K$ refine it with mean value filtering. The state of the loop is the iteration index, the pass index and the index of the next vertex:
+	\begin{lstlisting}[language={C++}]
+		while (nextVertex < N && secondsSince(tC0) < sliceSec)
+		{
+			if (pass == 0)
+			{
+				uNew[nextVertex] = EstimateSolution(Np_low, (int)nextVertex, surface,
+				*accel, lfs, Phi, sigma, sigmaBar);
+			}
+			else
+			{
+				uNew[nextVertex] = FilteredSolution(Nw, Nv, (int)nextVertex, surface,
+				*accel, lfs, Phi, sigma, sigmaBar, uPrev);
+			}
+			
+			nextVertex++;
+		}
+	\end{lstlisting}
+	Because the state is kept between frames, the solver does not have to finish a pass in one go. In the windowed mode it works for at most $0.05$ seconds per frame (\texttt{sliceSec}) and then the current shape is drawn, so the window stays responsive. In the headless mode there is no time limit and nothing is drawn. When a pass is finished, \texttt{uPrev} and \texttt{uNew} are swapped, so the next pass can read the result of the previous one.
+	
+	\subsection{Sigma}
+	
+	At the start of every iteration the screening coefficient is computed for every vertex:
+	\[
+	\sigma_n(x_i) = \frac{1}{\delta} \cdot \frac{A_n(x_i)}{A_0(x_i)},
+	\]
+	where $A_n$ is the vertex area of the current shape $\Phi^n$ and $A_0$ is the vertex area of $S_0$. The ratio of the two areas is the discrete version of the area distortion between the two metrics.
+	\begin{lstlisting}[language={C++}]
+		std::vector<float> An = vertexAreas(S, Phi);
+		
+		for (size_t i = 0; i < sigma.size(); ++i)
+		{
+			sigma[i] = An[i] / (std::max(A0[i], 1e-12f) * delta);
+		}
+	\end{lstlisting}
+	Since $\sigma_n$ is not constant, the walks use delta tracking \cite{sawhneyseyb22gridfree} with the constant majorant
+	\[
+	\bar{\sigma} = \max_i \sigma_n(x_i).
+	\]
+	
+	\subsection{First pass}
+	
+	In the first pass \texttt{EstimateSolution} starts \texttt{Np} walks from every vertex $x_i$ and averages their results. One walk (\texttt{WalkEstimate}) repeats the following step from its current point $x$:
+	\begin{enumerate}
+		\item The radius of the ball is the interpolated feature size $R$ at $x$, and $\kappa = R \sqrt{\bar{\sigma}}$.
+		\item With probability $\kappa / \sinh \kappa$ there is \textbf{no collision} inside the ball: a uniformly distributed point is sampled on the sphere of radius $R$, it is projected to its closest point on $S_0$, and the walk continues from there.
+		\item Otherwise there is a \textbf{collision} inside the ball. A point $y$ is sampled in the ball with the density of the screened Green's function, and it is projected to $S_0$. With probability $\sigma_n(y) / \bar{\sigma}$ the collision is real: the walk ends and returns $\Phi^n(y)$. Otherwise it is a null collision and the walk continues from $y$.
+	\end{enumerate}
+	\begin{lstlisting}[language={C++}]
+		float R = interpScalar(Ix, lfs);
+		double k = std::sqrt((double)sigmaBar) * R;
+		
+		if (uni01() < continueProb(k))
+		{
+			Vector3 y = samplePointOnSphere(x, R);
+			Ix = closestInterp(surface, accel, y, &x);
+		}
+		else
+		{
+			Vector3 y = sampleScreenedBall(x, R, k, radialDensityMax(k));
+			Vector3 p;
+			Interp Iy = closestInterp(surface, accel, y, &p);
+			
+			if (uni01() < interpScalar(Iy, sigma) / sigmaBar)
+			{
+				return interpVec(Iy, Phi);     // real collision
+			}
+			
+			x = p;                             // null collision
+			Ix = Iy;
+		}
+	\end{lstlisting}
+	The mean of the returned values is the estimate of $\Phi^{n+1}(x_i)$, so the three coordinates are solved together by the same walks. A walk is stopped after \texttt{maxSteps} steps and returns $\Phi^n$ at its current point. This is only a safety net, and the number of such walks is logged.
+	
+	Two details of the sampling are worth mentioning. The probability $\kappa / \sinh \kappa$ is evaluated in the form
+	\[
+	\frac{\kappa}{\sinh \kappa} = \frac{2 \kappa e^{-\kappa}}{1 - e^{-2\kappa}},
+	\]
+	which does not overflow for a large $\kappa$, and for $\kappa < 10^{-4}$ its Taylor polynomial $1 - \kappa^2 / 6$ is used. The point inside the ball has a uniformly distributed direction and the radius $tR$, where the density of $t \in [0, 1]$ is proportional to
+	\[
+	t \sinh\bigl(\kappa (1 - t)\bigr).
+	\]
+	$t$ is drawn with rejection sampling. The bound it needs is the maximum of the density, which is attained where $\tanh(\kappa (1 - t)) = \kappa t$, this equation is solved with bisection.
+	
+	\paragraph{Mirrored walk pairs.} The walks are started in pairs \cite{Hammersley_Morton_1956}. The two walks of a pair use the same random numbers, but every direction sampled by the second one is multiplied by $-1$:
+	\begin{lstlisting}[language={C++}]
+		std::mt19937 genA(rng()());
+		std::mt19937 genB = genA;
+		
+		g_gen = &genA;
+		g_dirSign =  1.0f;
+		sum = Vector3Add(sum, WalkEstimate(start, surface, accel, lfs, Phi, sigma, sigmaBar));
+		
+		g_gen = &genB;
+		g_dirSign = -1.0f;
+		sum = Vector3Add(sum, WalkEstimate(start, surface, accel, lfs, Phi, sigma, sigmaBar));
+	\end{lstlisting}
+	The estimate stays unbiased, because both walks have the right distribution on their own. The part of the error that is linear in the direction, however, has opposite signs in the two walks and cancels in their mean, which reduces the variance of the estimate.
+	
+	\subsection{Filters}
+	
+	The result of the first pass is noisy, and making it more accurate with more walks is expensive. Instead, the solver uses the mean value filtering of the projected walk on spheres method \cite{Sugimoto:2024:PWoS}: the estimate of pass $k-1$ is known at every vertex, so a new estimate needs only \emph{one} step of a walk, and the rest of the walk is replaced by the interpolated previous estimate $u_{k-1}$. For the vertex $x_i$ one filtered estimate (\texttt{FilteredEstimate}) is
+	\[
+	u_k(x_i) \approx c \, u_{k-1}(z) + \frac{1 - c}{N_v} \sum_{j=1}^{N_v} \Bigl[ p_j \, \Phi^n(y_j) + (1 - p_j) \, u_{k-1}(y_j) \Bigr],
+	\]
+	where $c = \kappa / \sinh \kappa$, $z$ is the projection of a uniform point of the sphere, $y_j$ are the projections of points sampled in the ball, and $p_j = \sigma_n(y_j) / \bar{\sigma}$. The first term is the case without a collision. In the second term the random decision between a real and a null collision is replaced by its expected value: with weight $p_j$ the walk would end and return $\Phi^n(y_j)$, and with weight $1 - p_j$ it would continue, which is approximated by $u_{k-1}(y_j)$.
+	\begin{lstlisting}[language={C++}]
+		Interp Iz = closestInterp(surface, accel, samplePointOnSphere(x, R));
+		Vector3 sphereTerm = Vector3Scale(interpVec(Iz, uPrev), (float)c);
+		
+		Vector3 ball = { 0.0f, 0.0f, 0.0f };
+		
+		for (int j = 0; j < Nv; ++j)
+		{
+			Interp Iy = closestInterp(surface, accel, sampleScreenedBall(x, R, k, Mx));
+			float p = std::clamp(interpScalar(Iy, sigma) / sigmaBar, 0.0f, 1.0f);
+			
+			ball = Vector3Add(ball, Vector3Add(Vector3Scale(interpVec(Iy, Phi), p),
+			Vector3Scale(interpVec(Iy, uPrev), 1.0f - p)));
+		}
+		
+		ball = Vector3Scale(ball, (float)((1.0 - c) / Nv));
+		return Vector3Add(sphereTerm, ball);
+	\end{lstlisting}
+	\texttt{FilteredSolution} averages \texttt{Nw} such estimates per vertex, again in mirrored pairs. One filtered estimate costs $1 + N_v$ closest-point queries and its cost does not depend on the length of the walks, so a filter pass is cheap compared to the first pass. Every pass averages the previous estimate over the neighbourhood of the vertex, which smooths the noise of the first pass.
+	
+	\subsection{Normalization}
+	
+	After the last pass \texttt{uPrev} holds the estimate of $\Phi^{n+1}$. The flow shrinks the surface, so before the next iteration the shape is normalized by \texttt{normalizeGeometry}: the area-weighted centroid
+	\[
+	c = \frac{\sum_i A(x_i) \, \Phi(x_i)}{\sum_i A(x_i)}
+	\]
+	is moved to the origin, and the shape is scaled so that its total area is the area of the original surface again:
+	\[
+	\Phi(x_i) \leftarrow s \, \bigl(\Phi(x_i) - c\bigr), \qquad s = \sqrt{\frac{A_{\mathrm{target}}}{\sum_i A(x_i)}}.
+	\]
+	\begin{lstlisting}[language={C++}]
+		std::vector<Vector3> newPos = uPrev;
+		
+		normalizeGeometry(surface, newPos, targetArea);
+		
+		Phi = newPos;
+		iteration++;
+		pass = 0;
+		sigmaReady = false;
+	\end{lstlisting}
+	The normalization keeps the scale of the shape fixed, so the same time step $\delta$ has the same meaning in every iteration. Only $\Phi$ is replaced; the surface $S_0$, its acceleration structure and the feature sizes are left untouched, and the next iteration starts with the computation of $\sigma_{n+1}$.
+	
+	\section{Logging and error metric}
+	
+	After every iteration the solver writes one row into \texttt{metrics.csv} and saves the vertex positions of the current shape, from which the flow can be replayed later. The logged quantities are
+	\begin{itemize}
+		\item the sphericity $\pi^{1/3} (6V)^{2/3} / A$ of the shape, which is $1$ for a sphere and smaller for everything else,
+		\item the statistics of $\sigma_n$ (majorant, mean, median, minimum),
+		\item the mean number of steps of a walk and the fraction of the walks that reached the step limit,
+		\item the number of closest-point queries, the running time and the memory usage of the iteration,
+		\item the quality of the mesh: the smallest angle of the triangles and the smallest ratio between the current and the original area of a triangle.
+	\end{itemize}
+	To measure the error of the Monte Carlo estimate, the same backward Euler step is also solved deterministically on the mesh,
+	\[
+	\bigl(\operatorname{diag}(A_n) + \delta L_0\bigr) \, u = \operatorname{diag}(A_n) \, \Phi^n,
+	\]
+	where $L_0$ is the cotangent stiffness matrix of $S_0$. The system is solved with the conjugate gradient method. This reference is used only for the comparison and is not part of the solver: the logged error is the root mean square distance between the Monte Carlo result and $u$, relative to the bounding box diagonal of the shape and relative to the displacement of the reference step.
+	
+	
+	% =====================================================================
+	% 6. RESULTS
+	% =====================================================================
+	\chapter{Results and numerical analysis}
+	\label{ch:results}
+	
+	We have done multiple numerical analysis on multiple models, and recorded many useful information that describes the behavior of the solver, and highlights its flaws. The test are done with the base values (when not changed) you can see in \ref{tab:params_of_base}.
+	
+	\begin{table}[ht]
+		\centering
+		\begin{tabular}{l l l}
+			\hline
+			Parameter & Base value \\
+			\texttt{delta} & $5 \cdot 10^{-3}$\\
+			\texttt{iters} & $300$\\
+			\texttt{Ns} & $30000$  \\
+			\texttt{lfsMin (Spot)} & $0.06$  \\
+			\texttt{lfsMin (Bunny)} & $0.055$  \\
+			\texttt{Np} & $20$ \\
+			\texttt{K} & $5$ \\
+			\texttt{Nw} & $50$  \\
+			\texttt{Nv} & $1$ \\
+			\texttt{maxSteps} & $4096$ \\
+			\texttt{seed} & $123$ \\
+			\hline
+		\end{tabular}
+		\caption{Parameters of the solver.}
+		\label{tab:params_of_base}
+	\end{table}
+	
+	\begin{remark}
+		In the tests we only recorded how the value of $\delta$, K (filter amount), and lfsMin affects our solver. Other parameters were not changed through the test, since we observed that changing them does not affect any metric notably. 
+	\end{remark}
+	
+	\section{Convergence}
+	\label{convergance}
+	
+	We recorded how the sphericity changes over time based on the parameters of the solver, and how well they converges to the sphere. 
+	
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.7\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_delta_spher.png}
+			\caption{Spot}
+			\label{fig:deltaOnBaseSpotSpher}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}{0.7\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/bunny_base_delta_spher.png}
+			\caption{Bunny}
+			\label{fig:deltaOnBaseBunnySpher}
+		\end{subfigure}
+		\caption{How $\delta$ affects the sphericity on Spot and the Bunny \cite{tuealga_meshes}}
+	\end{figure}
+	As we can see, in Figures~\ref{fig:deltaOnBaseSpotSpher} and~\ref{fig:deltaOnBaseBunnySpher}, $\delta$ play's a big role in the convergence of our method. With a lower value $\delta$ the geometry convergences faster to the sphere, but as we can see in sections \ref{error} and \ref{meshHealt} later, this faster convergence time also comes with really high error, and very bad mesh health, while lower values of $\delta$ comes with slower convergence and as we can see later in section \ref{wpsNtpw} a much longer running time, the error is less.
+	
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.2\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_iter_0.png}
+			\caption{Iteration 0}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}{0.2\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_iter_10.png}
+			\caption{Iteration 10}
+		\end{subfigure}
+		
+		\vspace{1em}
+		
+		\begin{subfigure}{0.2\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_iter_50.png}
+			\caption{Iteration 50}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}{0.2\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_iter_125.png}
+			\caption{Iteration 125}
+		\end{subfigure}
+		
+		\caption{Spot during the flow with $\delta = 5 \cdot 10^{-3}$}
+		\label{fig:deltaOnBaseSpotSphere}
+	\end{figure}
+	
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_base_K_spher.png}
+		\caption{Affect of different number of filters used on Spot regarding sphericity}
+		\label{fig:KOnBaseSpotSpher}
+	\end{figure}
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_base_lfs_spher.png}
+		\caption{Affect of different values of lfsMin used on Spot regarding sphericity}
+		\label{fig:lfsOnBaseSpotSpher}
+	\end{figure}
+	In Figures~\ref{fig:KOnBaseSpotSpher} and~\ref{fig:lfsOnBaseSpotSpher} we can see that neither the number of filters, nor the value of lfsMin affects the convergence much.
+	
+	\section{Error analysis}
+	\label{error}
+	The error was determined by comparing each vertices solved by our stochastic method to the vertices solved by the deterministic cMCF.
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_base_delta_error.png}
+		\caption{Affect of different $\delta$'s on used on Spot regarding error}
+		\label{fig:deltaOnBaseSpotError}
+	\end{figure}
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/bunny_base_delta_error.png}
+		\caption{Affect of different $\delta$'s on used on Spot regarding error}
+		\label{fig:deltaOnBaseBunnyError}
+	\end{figure}
+	\begin{figure}[H]
+	\centering
+		\includegraphics[scale=0.65]{images/spot_base_K_error.png}
+		\caption{Affect of different number of filters used on Spot regarding error}
+		\label{fig:KOnBaseSpotError}
+	\end{figure}
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_base_lfs_error.png}
+		\caption{Affect of different values of lfsMin used on Spot regarding error}
+		\label{fig:lfsOnBaseSpotError}
+	\end{figure}
+	As we already pointed out in the previous chapter, the value of $\delta$ changes the error dramaticly for the sacrifice of time. As we can see in Figures~\ref{fig:KOnBaseSpotError} and~\ref{fig:lfsOnBaseSpotError}, the number of filters used also changes the error, but it is not that huge as $\delta$ and the correct choice of lfsMin also matters, too low (lfsMin $< 0.009$) or too high (lfsMin $> 0.09$), and the error can worsen. As it can see, the perfect value of lfsMin for the model Spot was found around $0.05 \pm \epsilon$.
+	
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/error_on_bunny_ear.png}
+			\caption{Base view}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/error_on_bunny_ear_wire.png}
+			\caption{Mesh/Wire view}
+		\end{subfigure}
+		\caption{The ear's of the Bunny visibly became badly meshed on $\delta = 5 \cdot 10^{-3}$}
+		\label{fig:error_on_ears}
+	\end{figure}
+	
+	\section{Walk steps and time}
+	\label{wpsNtpw}
+	
+	The solver does two things in a iteration step, solving a low sample size PWoS estimate, and applying the filters. It is important to distinguish how each of these affect the time per iterations and also the whole running time of the flow. As it can be seen in Figures~\ref{fig:stp_tpw_base_spot} and~\ref{fig:stp_tpw_base_bunny}, in case of a lower value of $\delta$, time per iteration and steps per walk has a strong correlation.  
+	
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_delta_tpi.png}
+			\caption{Time per iteration}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_delta_spw.png}
+			\caption{Steps per walk}
+		\end{subfigure}
+		\caption{How $\delta$ affects the time of iteration steps and steps/walk on Spot}
+		\label{fig:stp_tpw_base_spot}
+	\end{figure}
+	
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/bunny_base_delta_tpi.png}
+			\caption{Time per iteration}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/bunny_base_delta_tpw.png}
+			\caption{Steps per walk}
+		\end{subfigure}
+		\caption{How $\delta$ affects the time of iteration steps and steps/walk on the Bunny}
+		\label{fig:stp_tpw_base_bunny}
+	\end{figure}
+	In case of a higher value of $\delta$, it can be seen, in Figure~\ref{fig:stp_tpw_base_spot_K}, that the number of filters takes the lead in "slowing" down the flow. This is due to the fact, that while the PWoS step (pass = 0), depends in $\delta$, hence a higher value makes it faster, the filter step's length is fixed. 
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_K_tpi.png}
+			\caption{Time per iteration}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_K_spw.png}
+			\caption{Steps per walk}
+		\end{subfigure}
+		\caption{How different amount of filters affects the time of iteration steps and steps/walk on Spot}
+		\label{fig:stp_tpw_base_spot_K}
+	\end{figure}
+	In Figure~\ref{fig:f} it can be seen that the lfsMin also changes the length of a walk. We already established that the best lfsMin value for Spot is $0.05 \pm \epsilon$ (and we chosen 0.06 in tests as can seen in \ref{tab:params_of_base}), yet it looks like here that an even lower value of delta would be better. This is true, only for efficiency, since throughout the walk, steps don't get really short in sharp edges, but a too low lfsMin value also increases the error seen in Figure~\ref{fig:lfsOnBaseSpotError}, and we favor less error, than efficiency, since the last one can be accelerated easily furthermore.
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_lfs_tpi.png}
+			\caption{Time per iteration}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_lfs_spw.png}
+			\caption{Steps per walk}
+		\end{subfigure}
+		\caption{How lfsMin affects the time of iteration steps and steps/walk on Spot}
+		\label{fig:f}
+	\end{figure}
+	
+	We also created a tabel to show how much time each solution took.
+	
+	\begin{table}[H]
+		\centering
+		\begin{tabular}{l l l l l}
+			\hline
+			Test & Time & Time (s) & iterations & sphericity  \\
+			\hline
+			\texttt{$\delta = 5 \cdot 10^{-3}$} & 20 min 48 sec & 1248,1 & 125 & 0,9946 \\
+			\texttt{$\delta = 1 \cdot 10^{-3}$} & 36 min 22 sec & 2182,2 & 175 & 0,9624 \\
+			\texttt{$\delta = 5 \cdot 10^{-4}$} & 50 min 39 sec & 3038,7 & 250 & 0,9458 \\
+			\texttt{K = 1} & 15 min 47 sec & 946,8 & 150 & 0,9874 \\
+			\texttt{K = 4} & 28 min 21 sec & 1701,0 & 150 & 0,9954 \\
+			\texttt{lfsMin = 0.99} & 30 min 59 sec & 1859,6 & 150 & 0,9952 \\
+			\texttt{lfsMin = 0.06} & 32 min 2 sec & 1922,2 & 150 & 0,9956 \\
+			\texttt{lfsMin = 0.009} & 38 min 3 sec & 2283,4 & 150 & 0,9946 \\
+			\hline
+		\end{tabular}
+		\caption{Parameters of the solver on Spot tests.}
+		\label{tab:time_of_tests}
+	\end{table}
+	
+	
+	\section{Mesh health}
+	\label{meshHealt}
+	
+	We measured mesh quality two ways. We checked the minimum angel of the mesh, and how many flipped triangles we have (here, flipped means, that a triangle points inwards). In the Figures~\ref{fig:mid_deg_delta_spot_bunny} and~\ref{fig:mid_deg_spot_k_lfs} below we can see, that during our flow the triangles don't keep their angel. This can be mainly due to the noise that the stochastic processes introduce.
+	
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_delta_mindeg.png}
+			\caption{Different values of $\delta$}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/bunny_base_delta_mindeg.png}
+			\caption{Different values of $\delta$}
+		\end{subfigure}
+		\caption{How $\delta$ changes the minDeg on Spot (left) and the Bunny (right)}
+		\label{fig:mid_deg_delta_spot_bunny}
+	\end{figure}
+	
+	
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_K_mindeg.png}
+			\caption{Different number of filters}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_lfs_mindeg.png}
+			\caption{Different values of lfsMin}
+		\end{subfigure}
+		\caption{How the minDeg changes on Spot}
+		\label{fig:mid_deg_spot_k_lfs}
+	\end{figure}
+	
+	The other way besides degrees, to measure how bad our mesh is throughout the flow, is the flipped triangles. An example for these triangles can be seen in \ref{fig:error_on_ears}.
+	
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}[t]{0.45\textwidth}
+			\centering
+			\includegraphics[height=4cm, keepaspectratio]{images/spot_bad_triangles.png}
+			\caption{Bunch of flipped triangles where Spot's ear is}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}[t]{0.45\textwidth}
+			\centering
+			\includegraphics[height=4cm, keepaspectratio]{images/bunny_bad_triangle.png}
+			\caption{The ear of the bunny flipped inside}
+		\end{subfigure}
+		\caption{Other examples of flipped triangles}
+		\label{fig:other_flipped_triangles}
+	\end{figure}
+	
+	Measuring flipped triangles are a bit tricky, because we can assume that in a original phase of a model there is triangles that point inside, because why couldn't they. For this reason, the percent of the flipped triangles only provides us useful information if the model are sphere like, because obviously on a sphere there shouldn't be any inwards pointing triangle even if the original model had. In the Figures below it can be seen, that the percent of the flipped triangles are high, but after than, the "rapid" transforming to the sphere begins, that we observed in section \ref{convergance}, that forces any originally inward pointing triangle to point outwards. However it can also make good triangles mess up and make them point inwards, which is why the trend is that the percent of flipped triangles starts to rise.
+
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_base_delta_flipped.png}
+		\caption{Affect of different values of $\delta$ used on Spot regarding flipped triangles}
+		\label{fig:spot_delta_flipped_base}
+	\end{figure}
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/bunny_base_delta_flipped.png}
+		\caption{Affect of different values of $\delta$ used on the Bunny regarding flipped triangles}
+		\label{fig:bunny_delta_flipped_base}
+	\end{figure}
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_base_K_flipped.png}
+		\caption{Affect of different number of filters used on Spot regarding flipped triangles}
+		\label{fig:spot_K_flipped_base}
+	\end{figure}
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_base_lfs_flipped.png}
+		\caption{Affect of different values of lfsMin used on Spot regarding flipped triangles}
+		\label{fig:spot_lfs_flipped_base}
+	\end{figure}
+	
+	As we can see, the number of filters used are definitely improving the quality, because it is not really a Monte Carlo step, so they don't introduce any noise, and lfsMin once again shows us, that over or under shooting it can affect the solver badly. 
+	
+	\section{Methods to improve solution}
+	
+	In this section we show two ways this solver can be improved.
+	
+	\subsection{Delta cycle}
+	
+	The delta cycle as it's name says, not only uses one constant $\delta$ throughout the entire flow, but cycles between higher and lower values of $\delta$. The ideology of this approach was, that first a iteration step is done with a really big $\delta$, so it convergences faster, then the following few iterations are done with lower and lower values of delta, so it "smooths" out the mesh. The following test were done on Spot and the cycle was the following:
+	\begin{equation}
+		\delta = \{5 \cdot 10^{-3}, 1 \cdot 10^{-3}, 5 \cdot 10^{-4}, 1 \cdot 10^{-4}, 5 \cdot 10^{-5}, 1 \cdot 10^{-5}, 5 \cdot 10^{-6}, 1 \cdot 10^{-6}, 5 \cdot 10^{-7}, 1 \cdot 10^{-7}\}
+	\end{equation}
+	before look at the graphs, it is important to note, that in case of the cycle, just every 10 (the length of the cycle) iteration was plotted, so it is readable, and also, these tests were done on Spot.
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_cycle_spher.png}
+		\caption{Delta cycle between constant delta solutions regarding sphericity}
+		\label{fig:spot_cycle_spher}
+	\end{figure}
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_cycle_error.png}
+		\caption{Delta cycle between constant delta solutions regarding error}
+		\label{fig:spot_cycle_error}
+	\end{figure}
+	
+	As we can see both the convergence and the error of this approach is moderate, but as it can be seen on Figure~\ref{fig:spot_cycle_time} the time it takes for iteration steps is enormous. To put it to perspective, for the green line ($\delta = 5 \cdot 10^{-4}$), which has similar convergence and error, the time it took to reach it's end was 3038s (50 min 39 sec), while to time it took for the cycle approach to reach it's end was 7226.6s (2 h 0 min 27 sec), hence this approach is not feasible.
+	
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_cycle_tpi.png}
+			\caption{time per iteration}
+		\end{subfigure}
+		\hspace{0.05\textwidth}
+		\begin{subfigure}{0.45\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_cycle_spw.png}
+			\caption{Steps per walk}
+		\end{subfigure}
+		\caption{Delta cycle between constant delta solutions regarding the time}
+		\label{fig:spot_cycle_time}
+	\end{figure}
+	
+	\subsection{"Smoothing" iterations}
+	
+	Inspired from the cycle's ideology of "smoothing" iterations, we approached this method a little different. Instead of constantly changing between different values of $\delta$ to smooth out the mesh, we just took the already solved flow's on Spot, ran a few more iterations, with gradually descending $\delta$'s.
+	
+	\section{Bonus: cMCF on non-genus-zero geometry}
+
+	
+	
+	% =====================================================================
+	% 7. DISCUSSION AND SUMMARY
+	% =====================================================================
+	\chapter{Discussion and conclusion}
+	\label{ch:summary}
+	
+	\section{Limitations}
+	\section{Future work}
+	\section{Summary}
+	
+	
+	% Acknowledgements (optional)
+	\chapter*{\acklabel}
+	\addcontentsline{toc}{chapter}{\acklabel}
+	\todo[inline]{Funding / thanks, or delete this chapter.}
+	
+	% Appendices (optional)
+	\appendix
+	
+	\chapter{Supplemental Notes}
+	\label{app:supplemental}
+	
+	\section{Kakutani's principle}
+	\label{app:kakutani}
+	
+	Consider the Feynman--Kac formula that links PDEs and stochastic processes. First consider the PDE
+	\begin{equation}
+		\label{fynman}
+		\frac{\partial u}{\partial t} + \mu(x,t)\frac{\partial u}{\partial x} + \frac{1}{2}\sigma^2(x,t)\frac{\partial^2 u}{\partial x^2} - V(x,t)u + f(x,t) = 0
+	\end{equation}
+	\[
+	u(x,T) = \psi(x), \qquad t \in [0,T]
+	\]
+	and the stochastic differential equation
+	\begin{equation}
+		\label{stochastic}
+		dX_t = \mu(X_t, t) \, dt + \sigma(X_t,t) dW_t
+	\end{equation}
+	where $W_t$ is the Wiener process. The Feynman--Kac formula is then:
+	
+	\begin{equation}
+		\label{feynmann--kacc}
+		u(x,t) = \mathbb{E}\left[e^{-\int_{t}^{T} V(X_s,s) \, ds} \psi(x_T) + \int_{t}^{T} e^{-\int_{t}^{s} V(X_r,r) \, dr} f(X_s, s) \, ds \Bigg| X_t = x\right]
+	\end{equation}
+	
+	In case of a Laplace equation with Dirichlet boundary values
+	
+	\begin{equation}
+		\begin{cases}
+			\Delta u(x) = 0, & x \in \Omega, \\
+			u(x) = g(x) & x \in \partial \Omega 
+		\end{cases}
+	\end{equation}
+	
+	we have the following:
+	
+	\[
+	\mu(x,t) = 0, \quad \sigma(x,t) = \sqrt{2}, \quad V(x,t) = 0, \quad f(x,t) = 0
+	\]
+	
+	the equation \ref{fynman} is than simplifies to
+	
+	\begin{equation}
+		\frac{\partial u}{\partial t} + \Delta u = 0
+	\end{equation}
+	and since the equation is not time dependent it continues to simplifies $\Delta u = 0$. The solution to $X_t$ from equation \ref{stochastic} is then just $X_t = x + \sqrt{2} W_t$. Now let $\tau_{\Omega} := \inf\left\{ t \geq 0: X_t \notin \Omega \right\}$ be the first time the Brownian motion leaves the domain. Substituting everything into \ref{feynmann--kacc} using $\tau_{\Omega}$ yields:
+
+	\begin{equation}
+		u(x) = \mathbb{E}\left[g(X_{\tau_{\Omega}})\right]
+	\end{equation}
+	
+	\section{cMFC to screened Poisson equation}
+	\label{app:cmfctopoi}
+	
+	To transform the equation \ref{cMFC} to a screened Poisson equation \ref{screenedPoi} we need to use the semi-implicit Euler method. The full derivation using our already defined notation \ref{alpha} is than the following:
+	
+	\begin{equation}
+		\frac{\partial \Phi_t}{\partial t} = \alpha(x,t) \Delta_{g_0} \Phi_t,
+	\end{equation}
+
+	discretizing the time derivative using the semi-implicit Euler method:
+	\begin{equation}
+		\frac{\Phi^{n+1} - \Phi^n}{\Delta t} = \alpha(x,t) \Delta_{g_0} \Phi^{n+1},
+	\end{equation}
+
+	let $\Delta t$ be $\delta$, then multiplying with it and rearranging the equation
+	\begin{equation}
+		\Phi^{n+1} - \delta \alpha(x,t)\Delta\Phi^{n+1} = \Phi^n.
+	\end{equation}
+
+	In the next step we divide with $\delta \alpha(x,t)$ which yields $\frac{1}{\delta \alpha(x,t)}$ in both sides of the equation, so let's just call it $\sigma(x,t)$
+	\begin{equation}
+		\sigma(x,t)\Phi^{n+1} - \Delta\Phi^{n+1} = \sigma(x,t)\Phi^n.
+	\end{equation}
+
+	To keep ourselves to the notation defined in \ref{screenedPoi}, we multiply each side with $-1$ and we can also denote the right side of the equation $\sigma(x,t)\Phi^n$ as $f(x,t,\Phi)$. Which yields as our final screened Poisson equation with varying screening term:
+	\begin{equation}
+		\label{app:finalcmfctopoi}
+		\left[\Delta - \sigma(x,t)\right]\Phi^{n+1} = -f(x,t,\Phi)
+	\end{equation}
+	
+	\section{The coefficient $c_r$ of the screened mean value formula}
+	\label{app:cr}
+	
+	\paragraph{Step 1: $c_r$ is the total weight of the boundary term.}
+	By Green's second identity, the boundary term of the representation formula is
+	$\int_{\partial B} P(y)\,u(y)\,dy$, where $P=-\partial_n G^{\sigma}_r(x,\cdot)$
+	is the Poisson kernel of the ball. The ball and the equation are invariant
+	under rotations around the center $x$, so $P$ is constant on $\partial B$.
+	Hence
+	\begin{equation}
+		\int_{\partial B} P\,u\,dy = \Big(\int_{\partial B}P\,dy\Big)\frac{1}{|\partial B|}\int_{\partial B}u\,dy,
+		\qquad\text{so}\qquad c_r=\int_{\partial B}P\,dy .
+	\end{equation}
+	
+	\paragraph{Step 2: a test problem that isolates $c_r$.}
+	Let $h$ solve the homogeneous problem
+	\begin{equation}
+		(\Delta-\sigma)h=0 \ \text{in } B,\qquad h=1 \ \text{on } \partial B .
+	\end{equation}
+	Since $f=0$ and the boundary data is $1$, formula \eqref{theint} gives
+	$h(x)=c_r\cdot 1$, that is,
+	\begin{equation}
+		c_r = h(x).
+	\end{equation}
+	(For $\sigma>0$ the maximum principle makes the solution unique, so any solution we
+	find below is \emph{the} solution.)
+	
+	\paragraph{Step 3: solving for $h$.}
+	By symmetry $h=h(\rho)$ with $\rho=\|y-x\|$. The Laplacian of a radial function in
+	$\mathbb{R}^3$ is $h''+\frac{2}{\rho}h'$, so
+	\begin{equation}
+		h''+\frac{2}{\rho}h'-s^2h=0 .
+	\end{equation}
+	Substituting $w(\rho)=\rho\,h(\rho)$ gives $w''=\rho h''+2h'$, hence
+	$w''-s^2w=0$ and
+	\begin{equation}
+		h(\rho)=\frac{A\sinh(s\rho)+B\cosh(s\rho)}{\rho}.
+	\end{equation}
+	$h$ must be bounded at $\rho=0$, which forces $B=0$. The boundary condition
+	$h(r)=1$ gives $A\sinh(sr)/r=1$, so $A=r/\sinh(sr)$ and
+	\begin{equation}
+		h(\rho)=\frac{r}{\sinh(sr)}\,\frac{\sinh(s\rho)}{\rho}.
+	\end{equation}
+	
+	\paragraph{Step 4: value at the center.}
+	Since $\sinh(s\rho)/\rho\to s$ as $\rho\to 0$,
+	\begin{equation}
+		c_r=h(0)=\frac{rs}{\sinh(sr)}=\frac{\kappa}{\sinh\kappa},
+		\qquad \kappa=r\sqrt{\sigma}.
+	\end{equation}
+
+	
+	% Bibliography (mandatory)
+	\cleardoublepage
+	\phantomsection
+	\addcontentsline{toc}{chapter}{\biblabel}
+	\printbibliography[title=\biblabel]
+	
+	% Lists (keep only the ones you actually fill with content)
+	\cleardoublepage
+	\phantomsection
+	\addcontentsline{toc}{chapter}{\lstfigurelabel}
+	\listoffigures
+	
+	%\cleardoublepage
+	%\phantomsection
+	%\addcontentsline{toc}{chapter}{\lstalgorithmlabel}
+	%\listofalgorithms
+	
+	%\cleardoublepage
+	%\phantomsection
+	%\addcontentsline{toc}{chapter}{\lsttablelabel}
+	%\listoftables
+	
+	%\cleardoublepage
+	%\phantomsection
+	%\addcontentsline{toc}{chapter}{\lstcodelabel}
+	%\lstlistoflistings
+	
+	% List of symbols (needs an extra makeindex run; the notation table in
+	% Section~\ref{sec:notation} is an easier alternative)
+	%\printnomenclature
+	
+\end{document}
