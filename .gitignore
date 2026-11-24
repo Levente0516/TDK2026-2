@@ -22,7 +22,6 @@
 *-blx.bib
 *.xdv
 
-# The compiled PDF is built by GitHub Actions (see the Actions tab)
 elteiktdk_en.pdf
 
 # Editors and OS

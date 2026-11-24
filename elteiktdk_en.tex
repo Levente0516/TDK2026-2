@@ -62,13 +62,13 @@
 	\chapter{Introduction}
 	\label{ch:intro}
 	
-	In this paper, we will aim to lay the ground of solving the conformalized mean-curvature flow (cMCF) with stochastic methods. In recent years stochastic methods for solving partial differential equations (PDEs) such as the Walk on Spheres method (WoS) and its variants have gained popularity in geometry processing, due to the advantages they have in computational approach. These methods do not need to solve large, often sparse matrices which are computationally expensive and takes up huge storage, like other numerical PDE solvers like Finite Element or Finite differential methods, they in general do not depend on meshes, so they avoid the problem of poor-quality triangulations and so called "mesh soups", and they can be trivially parallelized. 
+	In this paper, we lay the groundwork for solving the conformalized mean-curvature flow (cMCF) with stochastic methods. In recent years stochastic methods for solving partial differential equations (PDEs) such as the Walk on Spheres (WoS) method and its variants have gained popularity in geometry processing, due to their computational advantages. Unlike classical numerical PDE solvers such as the finite element or the finite difference method, they do not require solving large sparse linear systems, which can be expensive in both time and memory. They need no volumetric mesh, so they avoid the problems caused by poor-quality discretizations, they can evaluate the solution at individual points, and they are trivially parallelizable. The cMCF itself, however, is defined on a surface mesh, so in our setting the quality of the mesh still matters.
 	
-	The objective of this work was to investigate whether such stochastic methods can be extended to solve geometric evolution equations, specially the cMCF. The cMCF is a geometric evolution process that deforms genus-0 surfaces towards a spherical configuration, while preserving the conformal structure, avoiding singularities. Unlike conventional elliptic PDE problems, which are typically defined on a fixed domain, geometric evolution equations introduce an additional challenge: the computational domain itself changes over time. Consequently, the numerical method must not only approximate the solution of the governing PDE but also account for the evolving geometry on which the equation is defined.
+	The objective of this work is to investigate whether such stochastic methods can be extended to geometric evolution equations, specifically to the cMCF. The cMCF is a geometric flow that deforms genus-zero surfaces towards a round sphere while avoiding the singularities of the regular mean curvature flow. Unlike conventional elliptic problems, which are defined on a fixed domain, geometric evolution equations introduce an additional challenge: the domain itself changes over time, so in general a numerical method must also account for the evolving geometry on which the equation is defined. For the cMCF this can be avoided. Its operator is defined with respect to the metric of the initial surface, so the walks can be kept on the fixed original surface $S_0$, and only the embedding $\Phi$ is updated.
 	
-	In this work we developed a stochastic formulation of the cMCF based on the Walk on Spheres framework. Our results demonstrate the feasibility of applying stochastic PDE solvers to this class of geometric evolution problems. However, maintaining the quality of the underlying triangulation throughout the evolution remains an unresolved challenge. In particular, the deformation can lead to triangle degeneration, which may negatively affect the accuracy and stability of subsequent stochastic evaluations. Since conventional WoS methods generally do not address mesh quality as part of the PDE-solving process, this introduces an additional difficulty specific to the present application.
+	We develop a stochastic formulation of the cMCF based on the WoS framework. Our results show that it is feasible to solve this flow with a stochastic PDE solver. However, maintaining the quality of the triangulation during the flow remains a challenge. In particular, the noise of the Monte Carlo estimates produces thin and flipped (inverted) triangles, which may affect the accuracy and stability of the subsequent steps. Since conventional WoS methods do not have to deal with mesh quality, this difficulty is specific to the present application.
 	
-	Finally, we discuss potential approaches to mitigating mesh degeneration and outline several directions for further research. Our primary contribution is to demonstrate the feasibility of extending stochastic PDE-solving techniques beyond conventional fixed-domain problems to geometric evolution equations, opening up possibilities for geometry processing.
+	We also evaluate two simple strategies against mesh degeneration, a cyclic time step and a few final iterations with decreasing time steps, and outline directions for further research. Our primary contribution is to show that WoS-type solvers can be extended beyond fixed-domain problems to geometric flows whose operator is defined on a fixed reference surface, such as the cMCF.
 	
 	
 	% =====================================================================
@@ -84,20 +84,20 @@
 	\label{sec:notation}
 	
 	\begin{definition}[Laplace operator]
-		Let $\Omega \subset \mathbb{R}^d$ $(d \in \mathbb{N^+})$ be a bounded domain, $u: \Omega \rightarrow \mathbb{R}$, $u \in \mathfrak{C}^2$. The Laplace operator in Cartesian coordinates is:
+		Let $\Omega \subset \mathbb{R}^d$ $(d \in \mathbb{N}^+)$ be a bounded domain, $u: \Omega \rightarrow \mathbb{R}$, $u \in C^2$. The Laplace operator in Cartesian coordinates is:
 		\begin{equation}
-			\Delta u = \nabla \cdot \nabla u = \sum^n_{i=1} \frac{\partial^2 u}{\partial x_i^2}
+			\Delta u = \nabla \cdot \nabla u = \sum^d_{i=1} \frac{\partial^2 u}{\partial x_i^2}
 		\end{equation}
 		
 	\end{definition}
 	
 	\begin{definition}[Screened Poisson equation]
 		\label{screenedPoi}
-		Let $\Omega \in \mathbb{R}^d$ $(d \in \mathbb{N^+})$ be a bounded domain, $u: \Omega \rightarrow \mathbb{R}$, $u \in \mathfrak{C}^2$, $\sigma > 0$ a "screening" constant term and $f$ an arbitrary "source" function. The screened Poisson equation with Dirichlet boundary values is then:
+		Let $\Omega \subset \mathbb{R}^d$ $(d \in \mathbb{N}^+)$ be a bounded domain, $u: \Omega \rightarrow \mathbb{R}$, $u \in C^2$, $\sigma \geq 0$ a constant screening coefficient, $f$ an arbitrary source function and $g$ the boundary values. The screened Poisson equation with Dirichlet boundary conditions is
 		\begin{equation}
 			\begin{cases}
-				\Delta u(x) - \sigma u(x) = -f, & x \in \Omega, \\
-				u(x) = g(x) & x \in \partial \Omega 
+				\Delta u(x) - \sigma u(x) = -f(x), & x \in \Omega, \\
+				u(x) = g(x), & x \in \partial \Omega 
 			\end{cases}
 		\end{equation}   
 	\end{definition}
@@ -106,7 +106,6 @@
 		In case of $\sigma = 0$ we get a simple \textit{Poisson equation} $\Delta u = -f$, and if $f = 0$ as well, we get the \textit{Laplace equation} $\Delta u = 0$.
 	\end{remark}
 
-	
 	\begin{definition}[Green's function]
 		Let $\Omega \subset \mathbb{R}^d$ $(d \in \mathbb{N^+})$ be a bounded domain.
 		The Green's function $G: \Omega \times \Omega \rightarrow
@@ -119,29 +118,16 @@
 				& x \in \partial\Omega,
 			\end{cases}
 		\end{equation}
-		where $\delta_y$ denotes the Dirac delta distribution
+		where $\delta_y$ denotes the Dirac delta distribution (not to be confused with the time step $\delta$ used later)
 		centered at $y \in \Omega$.
 	\end{definition}
-	
-	\begin{definition}[Yukawa potential]:
-		\label{yukawa}
-		Let $\sigma > 0$ be a constant screening parameter.
-		The screened Green's function $G_\sigma$ is defined by
-		\begin{equation}
-			\begin{cases}
-				(-\Delta_x+\sigma)G_\sigma(x,y)
-				= \delta_y(x), & x \in \Omega,\\
-				G_\sigma(x,y)=0, & x \in \partial\Omega.
-			\end{cases}
-		\end{equation}
-	\end{definition}
-	
+
 	\begin{definition}[Surface and immersion] 
 		Let \(M\) be a compact, connected, two-dimensional smooth manifold without boundary (a closed surface), and let
 		\[
 		\Phi:M\to\mathbb{R}^3
 		\]
-		be a smooth immersion. In the experiments presented in this paper, \(M\) is assumed to be homeomorphic to the sphere \(S^2\), a surface of genus zero.
+		be a smooth immersion. In the experiments presented in this paper, \(M\) is assumed to be homeomorphic to the sphere \(S^2\), i.e.\ a surface of genus zero.
 	\end{definition}
 	
 	\begin{definition}[Induced metric]
@@ -154,7 +140,7 @@
 	
 	For a time-dependent family $\Phi_t$ we write $g_t$ for the metric induced
 	by $\Phi_t$, and $\det g_t$ for its determinant in local coordinates.
-	The quantity $\sqrt{\det g_t}$ is the area element of the surface $dA_t$.
+	The area element of the surface is $dA_t = \sqrt{\det g_t}\,dx^1 dx^2$.
 	
 	\begin{definition}[Laplace--Beltrami operator]
 		\label{lb}
@@ -171,7 +157,7 @@
 	Partial differential equations in geometry processing are traditionally solved
 	with mesh- or grid-based numerical methods, such as the finite element or
 	finite difference method. These methods discretize the whole domain, which is
-	costly in both time and memory, and their accuracy depends on the quality of
+	expensive in both time and memory, and their accuracy depends on the quality of
 	the discretization: a poor mesh (for example one with badly shaped or
 	degenerate elements) directly introduces error into
 	the solution.   
@@ -183,44 +169,43 @@
 	consider a ball $B_r(x)$ with center $x$ and radius $r$ fully contained within the domain.
 	The equation
 	\begin{equation} \label{screenedPoissonIntegral}
-		u(x) = \frac{c_r}{\left|\partial B_r(x)\right|}\int_{\partial B_r(x)} u(y) \, dy + \int_{B_r(x)} f(z)G^{\sigma}(x,z) \, dz
+		u(x) = \frac{c_r}{\left|\partial B_r(x)\right|}\int_{\partial B_r(x)} u(y) \, dy + \int_{B_r(x)} f(z)G^{\sigma}_r(x,z) \, dz
 	\end{equation}
-	holds for the screened Poisson equation, where $\left|\partial B_r(x)\right|$ is the surface area of the ball $B_r(x)$, and $G^{\sigma}$ is the \textit{Yukawa potential} which is a special case of the \textit{Green's function} and $c_r$ is a normalization factor accounting for the screening effect over the sphere. In case of a simple Poisson equation we use the simple \textit{Green's function} and leave out $c_r$. In case of a Laplace equation the second integral can be left out, because its purpose is sampling background information in the domain, and the Laplace equation only holds information at the boundaries.
+	holds for the screened Poisson equation, where $\left|\partial B_r(x)\right|$ is the area of the sphere $\partial B_r(x)$, $G^{\sigma}_r$ is the Green's function of the operator $\Delta-\sigma$ on the ball $B_r(x)$ (its free-space counterpart is the \textit{Yukawa potential}), and $c_r \le 1$ is the total weight of the boundary term, which accounts for the screening. For the Poisson equation ($\sigma = 0$) we have $c_r = 1$, and $G_r$ is the Green's function of the Laplacian on the ball. For the Laplace equation ($f = 0$) the second integral vanishes, since all information comes from the boundary.
 	
 	\begin{figure}[H]
 		\centering
 		\includegraphics[scale=0.5]{images/wos_example.png}
-		\caption{An example of a single walk from a point in case of a Laplace equation. $\Omega$ is the inside of the domain, $\partial \Omega$ is the boundary, and $\partial \Omega_\epsilon$ is the $\epsilon$ range to the boundary which also acts as hitting the boundary. $x_0$ is the inital starting point and $\overline{x}_4$ is the point where we terminated the walk. In case of a Poisson equation, we also take a sample $y_k$ inside the balls $B_r(x_k)$}
+		\caption{An example of a single walk from a point in case of a Laplace equation. $\Omega$ is the inside of the domain, $\partial \Omega$ is the boundary, and $\partial \Omega_\epsilon$ is the $\epsilon$ range to the boundary which also acts as hitting the boundary. $x_0$ is the initial starting point and $\overline{x}_4$ is the point where we terminated the walk. In case of a Poisson equation, we also take a sample $y_k$ inside the balls $B_r(x_k)$}
 		\label{fig:wos_example}
 	\end{figure}
 	
-	The equation \ref{screenedPoissonIntegral} can be thought as the following then: We take a sample point $x_0$, start many walks from this point. Terminate each walk when they get $\epsilon$ close to the boundary, and gather information alongside the walk, and when we terminate. Average these walks, and we got the value of a point in our domain. In case of a simple Laplace equation with dirichlet boundary conditions \textit{Kakutani's Princliple} (for derivation: \ref{app:kakutani}) states, that
+	Equation~\eqref{screenedPoissonIntegral} leads to the following algorithm. We start many walks from a point $x_0$. Each walk repeatedly jumps to a random point on the largest ball around its current position, collects the source contributions along the way, and terminates when it gets $\epsilon$-close to the boundary, where it reads the boundary value. The average of the walks is an estimate of $u(x_0)$. For the Laplace equation with Dirichlet boundary conditions, \textit{Kakutani's principle} states that
 	\begin{equation}
-		u(x) = \mathbb{E}\left[g(X_\tau)\right]
+		u(x) = \mathbb{E}\left[g(W_\tau)\right],
 	\end{equation}
-	Where $\tau$ is the first exit time of the walk and $W$ is the \textit{Wiener process} (or the \textit{Brownian motion}). The Mean Value Property \textcite{axler2001harmonic} then states that
+	where $W$ is a Brownian motion (Wiener process) started at $x$, and $\tau$ is its first exit time from $\Omega$. The \textit{mean value property} \cite{axler2001harmonic} states that
 	\begin{equation}
 		u(x) = \frac{1}{|\partial B_r(x)|}\int_{\partial B_r(x)} u(y) \, dy
 	\end{equation}
-	This is the core part of this method and can be seen in the equation \ref{screenedPoissonIntegral} as well. The estimator is for a sample point is then just 
+	This property is the core of the method, and it appears as the first term of Equation~\eqref{screenedPoissonIntegral}. The estimator at a point $x_0$ is
 	\begin{equation}
-		u(x_0) = \frac{1}{N} \sum_{i=1}^{N} \hat{u_f}(x_0)
+		u(x_0) = \frac{1}{N} \sum_{i=1}^{N} \widehat{u_f}(x_0)
 	\end{equation} 
-	
-	where $N$ is the number of walk and in case of a screened Poisson equation with Dirichlet boundary values $\hat{u_0}$ is given by:
+	where $N$ is the number of walks, and for the screened Poisson equation with Dirichlet boundary conditions a single walk $\widehat{u}^{(i)}_f$ is defined recursively by
 	
 	\begin{equation}
 		\widehat{u}_f(x_k) :=
 		\begin{cases}
 			g(\overline{x}_k), & x_k \in \partial\Omega_\epsilon \\
-			\widehat{u}_f(x_{k+1}) + \underbrace{\left| B_r(x_k) \right| f (y_k) G^{\sigma}(x_k, y_k)}_{\text{Poisson part}}, & \text{otherwise.}
+			c_r \widehat{u}_f(x_{k+1}) + \underbrace{\left| B_r(x_k) \right| f (y_k) G^{\sigma}_r(x_k, y_k)}_{\text{Poisson part}}, & \text{otherwise.}
 		\end{cases}
 	\end{equation}
-	
-	This can be futher modified with Probability Density Functions (PDF) to reduce the error. The stohastic representation of screened Poisson equation using the \textit{Feynman--Kac} formula is the following:
+	where $y_k\sim\mathcal U(B_r(x_k))$ and $\overline{x}_k$ is the boundary point closest to $x_k$. Instead of using the weight $c_r$, the walk can also be continued with probability $c_r$ and terminated with zero contribution otherwise (Russian roulette). The variance can be reduced further by sampling $y_k$ from a density proportional to $G^\sigma_r$ (importance sampling). Using the \textit{Feynman--Kac} formula, the solution of the screened Poisson equation can be written as
 	\begin{equation}
 		u(x) = \mathbb{E}\left[e^{-\sigma\tau} g(X_{\tau}) + \int_0^{\tau} e^{-\sigma t} f(X_t) \, dt\right]
 	\end{equation}
+	where $X_t = x + \sqrt{2}\,W_t$ is a Brownian motion whose generator is $\Delta$ (the standard Wiener process has generator $\frac{1}{2}\Delta$).
 	
 	\section{Walk on Spheres on surfaces}
 	
@@ -234,13 +219,13 @@
 	To make the projection well defined, the sphere radius must be small enough
 	that the closest point on the surface is unique inside the ball. For this, the
 	algorithm first builds a medial axis point cloud of the surface, which gives a
-	local feature size $l$ at every point. The walk is then the following:
+	local feature size $\mathrm{lfs}$ at every point. A walk then proceeds as follows:
 	\begin{enumerate}
 		\item Start from a point $x_0$ on the surface.
 		\item Take the largest admissible sphere around $x_k$, with radius $r_k$
 		given by the distance to the nearest medial axis point (and, if there is a
 		Dirichlet boundary, the distance to it, whichever is smaller).
-		\item Sample a point $y_k$ uniformly on the ball $\partial B_{r_k}(x_k)$ and if needed sample points within the ball for source term estinamtion.
+		\item Sample a point $y_k$ uniformly on the sphere $\partial B_{r_k}(x_k)$ and, if needed, points inside the ball for the source term.
 		\item Project it back to the surface, $x_{k+1} = \mathrm{cp}_S(y_k)$.
 		\item Repeat steps 2--4 until the walk gets within $\epsilon$ of the Dirichlet
 		boundary, or is terminated by Russian roulette.
@@ -257,11 +242,11 @@
 			\caption{Medial axis points inside of the surface}
 			\label{fig:medialaxispointcloudinside}
 		\end{subfigure}
-		\caption{The figures above shows the 3D medial axis point cloud generated for Spot \textcite{crane2013robust}. The point cloud contains 10000 points.}
+		\caption[Medial axis point cloud of Spot]{Medial axis point cloud of Spot \cite{crane2013robust} (10\,000 points).}
 	\end{figure}
 	
 	\begin{remark}
-		We do not go in detail of generating the medial axis point cloud. The algorithm to do so is described in great details in the paper about PWoS by \textcite{Sugimoto:2024:PWoS}
+		We do not discuss the construction of the medial axis point cloud in detail, it is described by \textcite{Sugimoto:2024:PWoS}.
 	\end{remark}
 	
 	% =====================================================================
@@ -275,29 +260,29 @@
 	Mean curvature flow can be thought of as a flow that pushes a point on a surface towards the average positions of its neighbors. This flow have the effect of smoothing the geometry.
 	
 	\begin{definition}[MCF]
-		Let $M$ be a two dimensional manifold, let $\Phi_t: M \rightarrow \mathbb{R}^3$ be a smooth family of immersions, and let $g_t(\cdot,\cdot)$ be the metric induced by the immersions at time $t$. We say that $\Phi_t$ is a solution to the mean-curvature flow if:
+		Let $M$ be a two-dimensional manifold, let $\Phi_t: M \rightarrow \mathbb{R}^3$ be a smooth family of immersions, and let $g_t(\cdot,\cdot)$ be the metric induced by the immersions at time $t$. We say that $\Phi_t$ is a solution to the mean-curvature flow if:
 		\begin{equation}
 			\frac{\partial \Phi_t}{\partial t} = \Delta_t \Phi_t
 		\end{equation}
-		where $\Delta_t$ is the Laplace-Beltrami operator \ref{lb} definied with respect to $g_t$.
+		where $\Delta_t$ is the Laplace-Beltrami operator \ref{lb} defined with respect to $g_t$.
 	\end{definition}
 	
 	\section{Conformalization of the flow}
 	\label{sec:cmcf-def}
 	
-	In \citeyear{kazhdan2012nonsingular} \textcite{kazhdan2012nonsingular} showed, that the regular mean-curvature flow can be made non-singular by conformalizing the metric. 
+	\textcite{kazhdan2012nonsingular} showed that the mean curvature flow can be made non-singular by a modification called conformalization.
 	
 	\begin{definition}[cMCF]
-		Let $(M,h)$ be a two dimensional Riemann manifold, let $\Phi_t: M \rightarrow \mathbb{R}^3$ be a smooth family of immersions, and let $g_t(\cdot,\cdot)$ be a metric included by the immersion at time $t$ and also let us assumn that in this case $h = g_0$. We then say that $\Phi_t$ is a solution to the conformalized mean curvature flow if:
+		Let $(M,h)$ be a two dimensional Riemann manifold, let $\Phi_t: M \rightarrow \mathbb{R}^3$ be a smooth family of immersions, and let $g_t(\cdot,\cdot)$ be a metric induced by the immersion at time $t$ and also let us assume that in this case $h = g_0$. We then say that $\Phi_t$ is a solution to the conformalized mean curvature flow if:
 		\begin{equation}
 			\label{cMFC}
 			\frac{\partial\Phi_t}{\partial t} = \sqrt{\left| g_t^{-1} g_0\right|}\Delta_{g_0}\Phi_t
 		\end{equation}
-		Where $\Delta_{g_0}$ is the Laplace-Beltrami operator with respect to $g_0$.
+		where $\Delta_{g_0}$ is the Laplace-Beltrami operator with respect to $g_0$.
 	\end{definition}
 	
 	\begin{remark}
-		For simplicity in the future let 
+		For brevity, let
 		\begin{equation}
 			\label{alpha}
 			\alpha(x,t) = \sqrt{\left| g_t^{-1} g_0\right|}, \qquad \Delta := \Delta_{g_0}
@@ -305,12 +290,12 @@
 	\end{remark}	
 	 
 	\begin{remark}
-		$\alpha(x,t)$ is essentially the volume of $x$ at the beginning, divided by the volume of $x$ at time $t$:
+		$\alpha(x,t)$ is the ratio of the initial and the current area element at $x$:
 	\end{remark}
 	
 	\begin{equation}
 		\label{alphaaa}
-		\alpha(x,t) = \sqrt{\left| g_t^{-1} g_0\right|} = \sqrt{\left|\frac{g_0}{g_t}\right|} = \frac{\sqrt{\det g_0}}{\sqrt{\det g_t}} = \frac{dA_0}{dA_t}
+		\alpha(x,t) = \sqrt{\left| g_t^{-1} g_0\right|} = \sqrt{\frac{\det g_0}{\det g_t}} = \frac{\sqrt{\det g_0}}{\sqrt{\det g_t}} = \frac{dA_0}{dA_t}
 	\end{equation}
 	
 	\section{Why cMCF?}
@@ -323,7 +308,7 @@
 		\caption{Regular mean-curvature flow pinches the neck of Spot, resulting in a singularity. Picture from: \textcite{wong2020application}}
 		\label{fig:badspot}
 	\end{figure}
-	The conformalized mean-curvature flow addresses this problems and reduces the numerical instability by introducing $\alpha(x,t)$ \ref{alpha}, the conformalization of the metric.
+	The cMCF avoids these singularities (Figure~\ref{fig:goodspot}) by using the fixed initial metric $g_0$ in the Laplace--Beltrami operator, together with the factor $\alpha(x,t)$ from Equation~\eqref{alpha}.
 	
 	\begin{figure}[H]
 		\centering
@@ -341,40 +326,48 @@
 	
 	\section{Idea}
 	
-	The equation \ref{cMFC} can be thought as the heat equation
+	Using the notation of Equation~\eqref{alpha}, Equation~\eqref{cMFC} is a heat equation with a diffusivity that varies in space and time:
 	
 	\begin{equation}
-		\frac{\partial \Phi}{\partial t} = \alpha(x,t)\Delta_{g_0}\Phi
+		\label{heat}
+		\frac{\partial \Phi_t}{\partial t} = \alpha(x,t)\Delta_{g_0}\Phi_t
 	\end{equation}
+	\textcite{zhou2026gridfree} recently proposed a WoS method for the inhomogeneous heat equation, but only with a constant diffusivity, whereas in our case the diffusivity $\alpha(x,t)$ varies in space and time, the authors mention non-constant diffusivity as future work. Instead of developing such a method, we discretize the equation in time and solve a sequence of elliptic problems. Since the operator of the cMCF is defined with respect to the fixed reference metric $g_0$, all of these problems can be solved with walks on the original surface $S_0$, only the coefficients and the source term change from step to step.
+	To obtain a screened Poisson equation, we discretize Equation~\eqref{heat} in time with a semi-implicit Euler scheme: the Laplacian is applied to the new state $\Phi^{n+1}$, while the coefficient $\alpha$ is taken at the current time $t_n$:
 	
-	if we use the notation \ref{alpha}. In a recent paper \textcite{zhou2026gridfree} managed a way to solve inhomogeneous heat equation with WoS, however, they only did so with a constant diffusivity $\kappa$, where in our case it's the varying $\alpha(x,t)$. In the paper they mention at the end, that they yet to cover a solution for the heat equation with a non constant diffusivity term. Our goal is not focused of creating such a method, so we need to search for a other way to solve the cMFC with WoS.	
-	
-	To begin, if we transform the equation \ref{cMFC} to a screened Poisson equation (for full derivation see: \ref{app:cmfctopoi})
+	\begin{equation}
+		\frac{\Phi^{n+1} - \Phi^n}{\Delta t} = \alpha(x,t_n) \Delta_{g_0} \Phi^{n+1}.
+	\end{equation}
+	Denoting the time step $\Delta t$ by $\delta$, multiplying by $\delta$ and rearranging gives
+	\begin{equation}
+		\Phi^{n+1} - \delta \alpha(x,t_n)\Delta\Phi^{n+1} = \Phi^n.
+	\end{equation}
+	Dividing by $\delta\alpha(x,t_n)$ and introducing the screening coefficient $\sigma(x,t) := 1/\bigl(\delta\,\alpha(x,t_n)\bigr)$ gives
+	\begin{equation}
+		\sigma(x,t)\Phi^{n+1} - \Delta\Phi^{n+1} = \sigma(x,t)\Phi^n.
+	\end{equation}
+	To keep ourselves to the notation defined in \ref{screenedPoi}, we multiply each side with $-1$ and we can also denote the right side of the equation $\sigma(x,t)\Phi^n$ as $f(x,t,\Phi)$. This gets us our final screened Poisson equation with varying screening term:
 	
 	\begin{equation}
 		\label{cMFCPossion}
-		\left[\Delta - \sigma(x,t)\right]\Phi^{n+1} = -f(x,t,\Phi),
+		\left[\Delta - \sigma(x,t)\right]\Phi^{n+1} = -f(x,t,\Phi).
 	\end{equation} 
-	
-	we can see that this equation can almost be solved with the traditional approach of the WoS, our only problem is still, the non constant screening term $\sigma$. This problem can be seen when we wite up the stohastic formulation of the equation using Feynman-kac:
-	
+	This equation could be solved with the classical WoS method if $\sigma$ were constant. The non-constant screening coefficient is visible in the Feynman--Kac representation of the solution:
 	\begin{equation}
 		\Phi^{n+1}(x) = \mathbb{E}\left[\int_{0}^{\infty} e^{-\int_{0}^{t} \sigma(X_s) \, ds} f(X_t) \, dt\right]
 	\end{equation}
-	Note, that since we will be working on a closed surface, there is no boundary, so we will be left with this shortened form of the stohastic representation.
+	Note that since we will be working on a closed surface, there is no boundary, so we will be left with this shortened form of the stochastic representation.
 	 
-	When we expand the right side of the equation we know that there is also a $\sigma$ term in the source term as well, however its not a problem to solve such screened Poisson equation with varying coefficients in the source term. Following this idea \textcite{sawhneyseyb22gridfree} developed a method to solve spatially varying coefficient PDEs with the WoS, by transforming the equation, such that the varying coefficients all gets put in the source term. There is multiple ides presented by them, but the only important one to us is the \textit{Delta tracking} method \textcite{raab2008unbiased}, which gets rid of the varying screening term in the left side of the equation, while still holding as a screened Poisson equation, resulting in a equation that the WoS can be used to solve.
+	When we expand the right side of the equation we know that there is also a $\sigma(x,t)$ term in the source term as well, however it's not a problem to solve such screened Poisson equation with varying coefficients in the source term. Following this idea \textcite{sawhneyseyb22gridfree} developed a method to solve spatially varying coefficient PDEs with the WoS, by transforming the equation, such that the varying coefficients all get transferred in the source term. There is multiple ideas presented by them, but the only important one to us is the \textit{Delta tracking} method \cite{raab2008unbiased}, which gets rid of the varying screening term in the left side of the equation, while still holding as a screened Poisson equation, resulting in a equation that the WoS can be used to solve.
 	
 	\section{Delta tracking}
 	
-	If we introduce a coefficient $\overline{\sigma} \geq \underset{x \in \Omega}{\sup} \sigma(x,t)$, and than add and substract $\overline{\sigma} \Phi^{n+1}$ from the right side, so
+	Let $\overline{\sigma} \geq \underset{x \in S}{\sup}\, \sigma(x,t)$ be a constant majorant. Adding and subtracting $\overline{\sigma} \Phi^{n+1}$ on the left-hand side gives
 	
 	\begin{equation}
 		\Delta \Phi^{n+1} - \overline{\sigma}\Phi^{n+1} + \overline{\sigma}\Phi^{n+1} - \sigma(x,t)\Phi^{n+1} = -f(x,t,\Phi),
 	\end{equation}
-	
-	and than rearrange the equation, we get
-	
+	and after rearranging
 	\begin{equation}
 		\left(\Delta - \overline{\sigma}\right)\Phi^{n+1} + \left(\overline{\sigma} - \sigma(x,t)\right)\Phi^{n+1} = -f(x,t,\Phi),
 	\end{equation}
@@ -382,12 +375,11 @@
 	\begin{equation}
 		\left(\Delta - \overline{\sigma}\right)\Phi^{n+1}  = - \underbrace{\left[f(x,t,\Phi) + \left(\overline{\sigma} - \sigma(x,t)\right)\Phi^{n+1}\right]}_{\overline{f}(x,t,\Phi)}.
 	\end{equation}
+	We are left with a screened Poisson equation with a constant screening term, the WoS can solve. However, $\Phi^{n+1}$ now appears on the right side of the equation, so we will have to find a way to handle this recursive term.
 	
-	We are left with a screened Poisson equation with a constant screening term, the WoS can solve. Thought now, $\Phi^{n+1}$ appears on the right side of the equation, so we will have to find a way to handle this recursive term.
-	
-	We can also see from the stohastic formulation that we now have $e^{-\overline{\sigma}t}$ that does not varies:
+	We can also see from the stochastic formulation that we now have $e^{-\overline{\sigma}t}$ that does not vary:
 	\begin{equation}
-		\Phi^{n+1}(x) = \mathbb{E}\left[\int_{0}^{\infty} e^{-\overline{\sigma}t} \overline{f}(W_t, \Phi) \, dt\right]
+		\Phi^{n+1}(x) = \mathbb{E}\left[\int_{0}^{\infty} e^{-\overline{\sigma}t} \overline{f}(X_t, \Phi) \, dt\right]
 	\end{equation}
 	
 	\section{Closest point extension}
@@ -405,7 +397,7 @@
 		\mathcal N(S)=\left\{x\in\mathbb{R}^3 : \|x-\operatorname{cp}_S(x)\|_2<\mathrm{lfs}\big(\operatorname{cp}_S(x)\big)\right\}
 	\end{equation}
 	the closest point is unique. The extension of a surface function $u$ is
-	$Eu(x)=u(\operatorname{cp}_S(x))$. It is constant in the normal direction, and
+$Eu(x)=u(\operatorname{cp}_S(x))$. It is constant in the normal direction, and by the closest point principle \cite{ruuth2008simple}
 	\begin{equation}
 		\Delta_{g_0}u(y)=\Delta[Eu](y),\qquad y\in S .
 	\end{equation}
@@ -417,7 +409,7 @@
 	\end{equation}
 	where $g$ compensates that $\Delta[Eu]$ is not constant in the normal direction and $g|_S=0$.
 	Following \textcite{Sugimoto:2024:PWoS} we take $g\equiv0$. This is exact on $S$ and
-	introduces a bias away from it, which decreases with the size of the balls.
+	introduces a bias away from it, which decreases as the balls get smaller.
 	The equation is solved componentwise for the three coordinates of $\Phi$.
 	
 	\section{Integral form on the surface}
@@ -430,13 +422,13 @@
 		u(x)=c_r\,\frac{1}{|\partial B_r(x)|}\int_{\partial B_r(x)}u(y)\,dy
 		+ \int_{B_r(x)}G^{\overline\sigma}_r(x,z)\,\overline f(z)\,dz ,
 	\end{equation}
-	where, with $\rho=\|x-z\|$ and $\kappa=r\sqrt{\overline\sigma}$ (for full derivation see: \ref{app:cr}), 
+	where, with $\rho=\|x-z\|$ and $\kappa=r\sqrt{\overline\sigma}$ (see Appendix~\ref{app:cr} for the derivation of $c_r$),
 	\begin{equation}
 		G^{\overline\sigma}_r(x,z)=\frac{\sinh\!\big(\sqrt{\overline\sigma}\,(r-\rho)\big)}{4\pi\rho\,\sinh\!\big(\sqrt{\overline\sigma}\,r\big)},
 		\qquad
 		c_r=\frac{\kappa}{\sinh\kappa}<1 .
 	\end{equation}
-	Both integrals are ordinary Euclidean integrals over the sphere and the ball. Substituting everything into the integral we get
+	Both integrals are ordinary Euclidean integrals over the sphere and the ball. Substituting $\overline f$ and evaluating the surface functions at the closest points, we get
 	\begin{equation}
 		\label{integralform}
 		\begin{gathered}
@@ -454,19 +446,19 @@
 	\end{equation}
 	
 	\begin{remark}
-		For simplicity we will use a hat as the notation for $\hat{x} := \operatorname{cp_S}(x)$
+		For brevity, we write $\hat{x} := \operatorname{cp}_S(x)$.
 	\end{remark}
 	
 	\section{Collisions and termination}
 	\label{sec:method-rr}
 	
-	From the equation \ref{integralform} above, we can easily express the first integral with the division by $|\partial B_r(x)|$ as a expected value:
+	The first term of Equation~\eqref{integralform} is an expectation over the uniform distribution on the sphere:
 	
 	\begin{equation}
 		\label{firstterm}
-		\frac{c_r}{|\partial B_r(x)|}\int_{\partial B_r(x)}\Phi^{n+1}(\hat{y})\,dy = c_r\mathbb{E}_{y \sim \partial B_r(x)}\left[\Phi^{n+1}(\hat{y})\right],
+		\frac{c_r}{|\partial B_r(x)|}\int_{\partial B_r(x)}\Phi^{n+1}(\hat{y})\,dy = c_r\mathbb{E}_{y \sim \partial B_r(x)}\left[\Phi^{n+1}(\hat{y})\right].
 	\end{equation}
-	and by applying the formula \ref{integralform} with $\Phi^{n+1}\equiv1$ and $\overline f\equiv\overline\sigma$, and using \ref{firstterm}, gives the integral of the Yukawa potential.
+	Applying Equation~\eqref{theint} to the constant function $u\equiv1$, which solves $(\Delta-\overline\sigma)u=-\overline\sigma$, gives the integral of the Green's function:
 	\begin{equation}
 		1 = c_r \cdot 1 + \int_{B_r(x)} G^{\overline{\sigma}}_r \cdot \overline{\sigma} \, dz
 	\end{equation}
@@ -476,7 +468,7 @@
 	\begin{equation}
 		\int_{B_r(x)}G^{\overline\sigma}_r\,dz = \frac{(1-c_r)}{\overline\sigma},
 	\end{equation}
-	so the probability density on the ball is
+	so $G^{\overline\sigma}_r$ can be normalized to a probability density on the ball:
 	\begin{equation}
 		p_G(z)= \frac{\overline\sigma}{(1-c_r)} G^{\overline\sigma}_r(x,z)
 	\end{equation}
@@ -484,16 +476,16 @@
 	\begin{equation}
 		\int_{B_r(x)} p_G(z) \, dz = \frac{\overline{\sigma}}{1 - c_r} \cdot \int_{B_r(x)} G^{\overline\sigma}_r(x,z) \, dz = \frac{\overline{\sigma}}{1 - c_r} \cdot \frac{(1-c_r)}{\overline{\sigma}} = 1
 	\end{equation}
-	With this probability density function, we can now write up the second integral of the equation \ref{integralform} similarly to \ref{firstterm}:
+	With this density, the second term of Equation~\eqref{integralform} can also be written as an expectation:
 	\begin{equation}
-		\int_{B_r(x)} G^{\overline{\sigma}}_r \overline{f} \, dz = \int_{B_r(x)} \overline{\sigma}G^{\overline{\sigma}}_r \left[\left(\frac{\sigma(\hat{z})}{\overline\sigma}\right) \Phi^n + \left(1 - \frac{\sigma(\hat{z})}{\overline{\sigma}}\right)\Phi^{n+1}\right] \, dz,
+		\int_{B_r(x)} G^{\overline{\sigma}}_r \overline{f} \, dz = \int_{B_r(x)} \overline{\sigma}G^{\overline{\sigma}}_r \left[\left(\frac{\sigma(\hat{z})}{\overline\sigma}\right) \Phi^n(\hat{z}) + \left(1 - \frac{\sigma(\hat{z})}{\overline{\sigma}}\right)\Phi^{n+1}(\hat{z})\right] \, dz.
 	\end{equation}
-	with $p(z)=\frac{\sigma(\hat{z})}{\overline\sigma} \in[0,1]$ and multiplying and dividing by $(1 - c_r)$ we can write:
+	With $p(z)=\sigma(\hat{z})/\overline\sigma \in[0,1]$, multiplying and dividing by $1-c_r$ gives
 	\begin{equation}
 		\label{secondterm}
-		(1 - c_r)\int_{B_r(x)} \underbrace{\frac{1}{1 - c_r}\overline{\sigma} G^{\overline{\sigma}}_r}_{ = p_G} \left[p(z) \Phi^n + (1 - p(z)) \Phi^{n+1}\right]  
+		(1 - c_r)\int_{B_r(x)} \underbrace{\frac{\overline{\sigma}}{1 - c_r} G^{\overline{\sigma}}_r}_{ = p_G} \left[p(z) \Phi^n(\hat{z}) + (1 - p(z)) \Phi^{n+1}(\hat{z})\right] dz.
 	\end{equation}
-	Combining \ref{firstterm} and \ref{secondterm} we get the following:
+	Combining Equations~\eqref{firstterm} and~\eqref{secondterm} gives
 	\begin{equation}
 		\begin{gathered}
 			\Phi^{n+1}(x)=c_r\,\mathbb{E}_{y \sim \partial B_r(x)}\!\left[\Phi^{n+1}(\hat{y})\right] + \\[6pt]
@@ -505,7 +497,7 @@
 	$P_3 = (1-c_r)(1-p(z))$ sum to one, so they are branching probabilities of one step of the walk:
 	\begin{enumerate}
 		\item with probability $c_r$ there is no collision: sample $y$ uniformly on $\partial B_r(x)$
-		and continue from $\hat{y})$;
+		and continue from $\hat{y}$;
 		\item otherwise a collision happens inside the ball at $z\sim p_G$, and
 		\begin{enumerate}
 			\item with probability $p(z)$ it is a \emph{real} collision: the walk terminates and returns $\Phi^n(\hat{z})$;
@@ -517,22 +509,20 @@
 	the collision, no separate Poisson term is estimated, and termination needs no Russian
 	roulette with zero contribution.
 	
-	
 	\begin{remark}
-		We already defined in \ref{alphaaa} $\alpha(x,t) = dA_0 / dA_t$ and since than we defined $\sigma(x,t) = 1 / \delta\alpha(x,t)$ so following this notation
+		Since $\alpha = dA_0/dA_t$ (Equation~\eqref{alphaaa}), the screening coefficient is the ratio of the current and the initial area element, divided by the time step:
+		\begin{equation}
+			\sigma(x,t) = \frac{1}{\delta\alpha(x,t)} = \frac{1}{\delta \frac{dA_0}{dA_t}} = \frac{dA_t}{\delta dA_0}
+		\end{equation}
 	\end{remark}
 
-	\begin{equation}
-		\sigma(x,t) = \frac{1}{\delta\alpha(x,t)} = \frac{1}{\delta \frac{dA_0}{dA_t}} = \frac{dA_t}{\delta dA_0}
-	\end{equation}
-	
 	% =====================================================================
 	% 5. IMPLEMENTATION
 	% =====================================================================
 	\chapter{Implementation}
 	\label{ch:impl}
 	
-	The solver was implemented in C++17 and compiled with GCC 15.2.0. For fast closest-point queries I used mantis \cite{mantis}. For visualization I used Raylib 5.5 \cite{raylib55}. The architecture of the solver is shown in Figure~\ref{fig:architecture}.
+	The solver was implemented in C++17 and compiled with GCC 15.2.0. We use mantis \cite{mantis} for fast closest-point queries and raylib 5.5 \cite{raylib55} for visualization. The architecture of the solver is shown in Figure~\ref{fig:architecture}. The walks and the filter passes ran on a single thread; only the construction of the acceleration structure in mantis is parallel.
 
 	\begin{figure}[ht]
 		\centering
@@ -568,7 +558,7 @@
 	
 	\section{Data structure}
 	
-	As we have already said, cMCF is only useful when we work with meshes. For this reason the surface is stored as a vector of vertices and a vector of triangles.
+	The input surface is a triangle mesh, stored as a vector of vertices and a vector of triangles.
 	\begin{lstlisting}[language={C++}]
 		struct Surface{
 			std::vector<Vertex> vertices;
@@ -630,10 +620,10 @@
 	Everything else that depends on the geometry is built by \texttt{rebuildBase}:
 	\begin{enumerate}
 		\item \textbf{Acceleration structure.} The vertices and triangles are handed to mantis, which builds the structure used by every closest-point query.
-		\item \textbf{Medial axis point cloud.} \texttt{Ns} points are sampled, and from them a point cloud $M$ that approximates the medial axis of the surface is computed.
+		\item \textbf{Medial axis point cloud.} \texttt{Ns} points are sampled, and from them a point cloud $\mathcal{M}$ that approximates the medial axis of the surface is computed.
 		\item \textbf{Local feature size.} The radius of the ball a walk may use at vertex $x_i$ is
 		\[
-		R_i = \max\bigl(0.9 \cdot \min_{m \in M} \lVert m - x_i \rVert,\ \texttt{lfsMin}\bigr).
+		R_i = \max\bigl(0.9 \cdot \min_{m \in \mathcal{M}} \lVert m - x_i \rVert,\ \texttt{lfsMin}\bigr).
 		\]
 		The factor $0.9$ keeps the ball away from the medial axis, so the closest-point projection of its points is well defined, the lower bound keeps the walks from stalling where the surface is very thin.
 		\item \textbf{Initial state.} $A_0$ is stored and the embedding is initialized as $\Phi^0 = $ the original vertex positions.
@@ -766,10 +756,10 @@
 		ball = Vector3Scale(ball, (float)((1.0 - c) / Nv));
 		return Vector3Add(sphereTerm, ball);
 	\end{lstlisting}
-	\texttt{FilteredSolution} averages \texttt{Nw} such estimates per vertex, again in mirrored pairs. One filtered estimate costs $1 + N_v$ closest-point queries and its cost does not depend on the length of the walks, so a filter pass is cheap compared to the first pass. Every pass averages the previous estimate over the neighbourhood of the vertex, which smooths the noise of the first pass.
+	\texttt{FilteredSolution} averages \texttt{Nw} such estimates per vertex, again in mirrored pairs. One filtered estimate costs $1 + N_v$ closest-point queries, and its cost does not depend on the length of the walks (although the rejection sampling in the ball becomes slower for large $\kappa$), so a filter pass is cheap compared to the first pass. Every pass averages the previous estimate over the neighbourhood of the vertex, which reduces the noise of the first pass. Each filtered estimate is, however, itself a Monte Carlo estimate and adds a smaller amount of new noise.
 	
 	\subsection{Normalization}
-	
+	\label{sec:normalization}
 	After the last pass \texttt{uPrev} holds the estimate of $\Phi^{n+1}$. The flow shrinks the surface, so before the next iteration the shape is normalized by \texttt{normalizeGeometry}: the area-weighted centroid
 	\[
 	c = \frac{\sum_i A(x_i) \, \Phi(x_i)}{\sum_i A(x_i)}
@@ -788,10 +778,10 @@
 		pass = 0;
 		sigmaReady = false;
 	\end{lstlisting}
-	The normalization keeps the scale of the shape fixed, so the same time step $\delta$ has the same meaning in every iteration. Only $\Phi$ is replaced; the surface $S_0$, its acceleration structure and the feature sizes are left untouched, and the next iteration starts with the computation of $\sigma_{n+1}$.
+	The normalization keeps the scale of the shape fixed, so the same time step $\delta$ has the same meaning in every iteration. Since it is a similarity transformation, it does not change the shape, only the time parametrization of the flow. Only $\Phi$ is replaced, the surface $S_0$, its acceleration structure and the feature sizes are left untouched, and the next iteration starts with the computation of $\sigma_{n+1}$.
 	
 	\section{Logging and error metric}
-	
+	\label{sec:logging}
 	After every iteration the solver writes one row into \texttt{metrics.csv} and saves the vertex positions of the current shape, from which the flow can be replayed later. The logged quantities are
 	\begin{itemize}
 		\item the sphericity $\pi^{1/3} (6V)^{2/3} / A$ of the shape, which is $1$ for a sphere and smaller for everything else,
@@ -800,11 +790,11 @@
 		\item the number of closest-point queries, the running time and the memory usage of the iteration,
 		\item the quality of the mesh: the smallest angle of the triangles and the smallest ratio between the current and the original area of a triangle.
 	\end{itemize}
-	To measure the error of the Monte Carlo estimate, the same backward Euler step is also solved deterministically on the mesh,
+	To measure the error of the Monte Carlo estimate, the same semi-implicit step is also solved deterministically on the mesh,
 	\[
 	\bigl(\operatorname{diag}(A_n) + \delta L_0\bigr) \, u = \operatorname{diag}(A_n) \, \Phi^n,
 	\]
-	where $L_0$ is the cotangent stiffness matrix of $S_0$. The system is solved with the conjugate gradient method. This reference is used only for the comparison and is not part of the solver: the logged error is the root mean square distance between the Monte Carlo result and $u$, relative to the bounding box diagonal of the shape and relative to the displacement of the reference step.
+	where $L_0$ is the cotangent stiffness matrix of $S_0$. The system is solved with the conjugate gradient method. This reference is used only for the comparison and is not part of the solver. The logged error is the root mean square distance between the Monte Carlo result and $u$, relative to the bounding box diagonal of the shape and relative to the displacement of the reference step. Note that this is the error of a single step started from the same $\Phi^n$ (a local error), the errors of the previous steps are not included.
 	
 	
 	% =====================================================================
@@ -813,15 +803,16 @@
 	\chapter{Results and numerical analysis}
 	\label{ch:results}
 	
-	We have done multiple numerical analysis on multiple models, and recorded many useful information that describes the behavior of the solver, and highlights its flaws. The test are done with the base values (when not changed) you can see in \ref{tab:params_of_base}.
+	We tested the solver on two models, Spot \cite{crane2013robust} and the Stanford Bunny \cite{tuealga_meshes}, and recorded the quantities listed in Section~\ref{sec:logging} to describe its behaviour and its limitations. Unless stated otherwise, the tests use the base parameters in Table~\ref{tab:params_of_base}. Each configuration was run once with a fixed seed, so small differences between runs should be interpreted with care.
 	
 	\begin{table}[ht]
 		\centering
-		\begin{tabular}{l l l}
+		\begin{tabular}{l l }
 			\hline
 			Parameter & Base value \\
+			\hline
 			\texttt{delta} & $5 \cdot 10^{-3}$\\
-			\texttt{iters} & $300$\\
+			\texttt{iters} & $150$\\
 			\texttt{Ns} & $30000$  \\
 			\texttt{lfsMin (Spot)} & $0.06$  \\
 			\texttt{lfsMin (Bunny)} & $0.055$  \\
@@ -833,37 +824,39 @@
 			\texttt{seed} & $123$ \\
 			\hline
 		\end{tabular}
-		\caption{Parameters of the solver.}
+		\caption{Base parameters of the tests.}
 		\label{tab:params_of_base}
 	\end{table}
 	
 	\begin{remark}
-		In the tests we only recorded how the value of $\delta$, K (filter amount), and lfsMin affects our solver. Other parameters were not changed through the test, since we observed that changing them does not affect any metric notably. 
+		We only varied the time step $\delta$, the number of filter passes $K$ and \texttt{lfsMin}. In preliminary experiments, changing the other parameters did not affect the measured quantities notably.
 	\end{remark}
+	All measurements were made with an AMD Ryzen 5 7530U CPU with 16 GB of RAM.
 	
 	\section{Convergence}
 	\label{convergance}
 	
-	We recorded how the sphericity changes over time based on the parameters of the solver, and how well they converges to the sphere. 
+	Figure~\ref{fig:sphericity_delta} shows how the sphericity changes during the flow for different values of $\delta$. Note that the horizontal axis is the number of iterations; one iteration advances the flow by $\delta$, so a larger $\delta$ is expected to converge in fewer iterations.
 	
 	\begin{figure}[H]
 		\centering
-		\begin{subfigure}{0.7\textwidth}
+		\begin{subfigure}{0.49\textwidth}
 			\centering
-			\includegraphics[width=\linewidth]{images/spot_base_delta_spher.png}
+			\includegraphics[width=\linewidth]{images/spot_base_delta_spher.pdf}
 			\caption{Spot}
 			\label{fig:deltaOnBaseSpotSpher}
 		\end{subfigure}
-		\hspace{0.05\textwidth}
-		\begin{subfigure}{0.7\textwidth}
+		\hspace{0.00\textwidth}
+		\begin{subfigure}{0.49\textwidth}
 			\centering
-			\includegraphics[width=\linewidth]{images/bunny_base_delta_spher.png}
+			\includegraphics[width=\linewidth]{images/bunny_base_delta_spher.pdf}
 			\caption{Bunny}
 			\label{fig:deltaOnBaseBunnySpher}
 		\end{subfigure}
-		\caption{How $\delta$ affects the sphericity on Spot and the Bunny \cite{tuealga_meshes}}
+		\caption{How $\delta$ affects the sphericity on Spot and the Bunny}
+		\label{fig:sphericity_delta}
 	\end{figure}
-	As we can see, in Figures~\ref{fig:deltaOnBaseSpotSpher} and~\ref{fig:deltaOnBaseBunnySpher}, $\delta$ play's a big role in the convergence of our method. With a lower value $\delta$ the geometry convergences faster to the sphere, but as we can see in sections \ref{error} and \ref{meshHealt} later, this faster convergence time also comes with really high error, and very bad mesh health, while lower values of $\delta$ comes with slower convergence and as we can see later in section \ref{wpsNtpw} a much longer running time, the error is less.
+	The time step $\delta$ has a large effect on the convergence. With a larger $\delta$, the surface approaches the sphere in fewer iterations, but, as shown in Sections~\ref{error} and~\ref{meshHealt}, each step has a larger error and the mesh degrades more. With a smaller $\delta$, the error of a single step is smaller, but many more iterations are needed, the total running time is much longer (Section~\ref{wpsNtpw}), and, as shown in Section~\ref{error}, the accumulated error at the same flow time is actually larger.
 	
 	\begin{figure}[H]
 		\centering
@@ -897,49 +890,194 @@
 		\label{fig:deltaOnBaseSpotSphere}
 	\end{figure}
 	
-	
-	\begin{figure}[H]
-		\centering
-		\includegraphics[scale=0.65]{images/spot_base_K_spher.png}
-		\caption{Affect of different number of filters used on Spot regarding sphericity}
-		\label{fig:KOnBaseSpotSpher}
-	\end{figure}
-	\begin{figure}[H]
-		\centering
-		\includegraphics[scale=0.65]{images/spot_base_lfs_spher.png}
-		\caption{Affect of different values of lfsMin used on Spot regarding sphericity}
-		\label{fig:lfsOnBaseSpotSpher}
-	\end{figure}
-	In Figures~\ref{fig:KOnBaseSpotSpher} and~\ref{fig:lfsOnBaseSpotSpher} we can see that neither the number of filters, nor the value of lfsMin affects the convergence much.
+	Changing \texttt{lfsMin} or the number of filter passes has almost no effect on the rate of convergence or on the final sphericity (Table~\ref{tab:time_of_tests}).
 	
 	\section{Error analysis}
 	\label{error}
-	The error was determined by comparing each vertices solved by our stochastic method to the vertices solved by the deterministic cMCF.
+	The error is measured as described in Section~\ref{sec:logging}: in every iteration, the Monte Carlo result is compared to the deterministic solution of the same step, started from the same $\Phi^n$. It is therefore the error of a single step. Since a smaller $\delta$ needs more steps to reach the same flow time, these per-step errors cannot be compared directly across different values of $\delta$.
 	\begin{figure}[H]
 		\centering
-		\includegraphics[scale=0.65]{images/spot_base_delta_error.png}
-		\caption{Affect of different $\delta$'s on used on Spot regarding error}
-		\label{fig:deltaOnBaseSpotError}
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_delta_error.pdf}
+			\caption{Spot}
+			\label{fig:deltaOnBaseSpotError}
+		\end{subfigure}
+		\hspace{0.00\textwidth}
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/bunny_base_delta_error.pdf}
+			\caption{Bunny}
+			\label{fig:deltaOnBaseBunnyError}
+		\end{subfigure}
+		\caption{Effect of $\delta$ on the per-step error on Spot and the Bunny.}
 	\end{figure}
+	
 	\begin{figure}[H]
 		\centering
-		\includegraphics[scale=0.65]{images/bunny_base_delta_error.png}
-		\caption{Affect of different $\delta$'s on used on Spot regarding error}
-		\label{fig:deltaOnBaseBunnyError}
+		\begin{subfigure}{0.49\textwidth}
+		\centering
+			\includegraphics[width=\linewidth]{images/spot_base_K_error.pdf}
+			\caption{Effect of different number of filters}
+			\label{fig:KOnBaseSpotError}
+		\end{subfigure}
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_lfs_error.pdf}
+			\caption{Effect of different values of lfsMin}
+			\label{fig:lfsOnBaseSpotError}
+		\end{subfigure}
+		\caption{Effect of the number of filter passes $K$ and of \texttt{lfsMin} on the per-step error on Spot.}
 	\end{figure}
-	\begin{figure}[H]
-	\centering
-		\includegraphics[scale=0.65]{images/spot_base_K_error.png}
-		\caption{Affect of different number of filters used on Spot regarding error}
-		\label{fig:KOnBaseSpotError}
-	\end{figure}
+	The per-step error depends strongly on $\delta$. More filter passes also reduce the error, but their effect is smaller than that of $\delta$. The choice of \texttt{lfsMin} matters as well: both too small ($\texttt{lfsMin} \le 0.009$) and too large ($\texttt{lfsMin} \ge 0.09$) values increase the error. On Spot, the lowest error was observed around $\texttt{lfsMin} \approx 0.05$.
+	
+	\paragraph{Accumulated error.} To measure the accumulated error, we replayed every run with the deterministic step from the initial surface, using the same sequence of time steps, and compared the two flows at every iteration. Table~\ref{tab:global_delta} compares the time steps at the same flow time $t = n\delta$. Although a smaller $\delta$ has a smaller per-step error, its accumulated error is larger, because it needs more steps to reach the same flow time, and every step adds noise.
+	
+	\begin{table}[H]
+		\centering
+		\begin{tabular}{l c c c c}
+			\hline
+			& \multicolumn{2}{c}{Spot} & \multicolumn{2}{c}{Bunny} \\
+			$\delta$ & $t = 0.013$ & $t = 0.1$ & $t = 0.013$ & $t = 0.1$ \\
+			\hline
+			$5\cdot10^{-3}$ & 0.69\%$^*$ & 2.26\% & 0.64\%$^*$ & 1.02\% \\
+			$1\cdot10^{-3}$ & 1.31\% & 4.64\% & 1.23\% & 1.32\% \\
+			$5\cdot10^{-4}$ & 1.92\% & 5.39\% & 1.18\% & 1.39\% \\
+			$1\cdot10^{-4}$ & 6.18\% & --     & 2.58\% & --     \\
+			$5\cdot10^{-5}$ & --     & --     & 3.67\% & --     \\
+			\hline
+		\end{tabular}
+		\caption{Accumulated error at the same flow time: RMS distance between the Monte Carlo and the deterministic flow, relative to the bounding box diagonal. $^*$At $t = 0.015$ (iteration 3). A dash means that the run did not reach this flow time.}
+		\label{tab:global_delta}
+	\end{table}
+	
+	\section{Walk steps and time}
+	\label{wpsNtpw}
+	
+	An iteration consists of two parts: the first pass, which runs PWoS walks with few samples, and the $K$ filter passes. Their costs behave differently, so we discuss them separately. Figures~\ref{fig:stp_tpw_base_spot} and~\ref{fig:stp_tpw_base_bunny} show that for small values of $\delta$ the time per iteration closely follows the number of steps per walk, i.e.\ the first pass dominates the cost.  
+	
 	\begin{figure}[H]
 		\centering
-		\includegraphics[scale=0.65]{images/spot_base_lfs_error.png}
-		\caption{Affect of different values of lfsMin used on Spot regarding error}
-		\label{fig:lfsOnBaseSpotError}
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_delta_tpi.pdf}
+			\caption{Time per iteration}
+		\end{subfigure}
+		\hspace{0.00\textwidth}
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_delta_spw.pdf}
+			\caption{Steps per walk}
+		\end{subfigure}
+		\caption{Effect of $\delta$ on the time per iteration and the steps per walk on Spot.}
+		\label{fig:stp_tpw_base_spot}
 	\end{figure}
-	As we already pointed out in the previous chapter, the value of $\delta$ changes the error dramaticly for the sacrifice of time. As we can see in Figures~\ref{fig:KOnBaseSpotError} and~\ref{fig:lfsOnBaseSpotError}, the number of filters used also changes the error, but it is not that huge as $\delta$ and the correct choice of lfsMin also matters, too low (lfsMin $< 0.009$) or too high (lfsMin $> 0.09$), and the error can worsen. As it can see, the perfect value of lfsMin for the model Spot was found around $0.05 \pm \epsilon$.
+	
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/bunny_base_delta_tpi.pdf}
+			\caption{Time per iteration}
+		\end{subfigure}
+		\hspace{0.00\textwidth}
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/bunny_base_delta_tpw.pdf}
+			\caption{Steps per walk}
+		\end{subfigure}
+		\caption{Effect of $\delta$ on the time per iteration and the steps per walk on the Bunny.}
+		\label{fig:stp_tpw_base_bunny}
+	\end{figure}
+	For the largest value of $\delta$, the filter passes dominate the cost (Figure~\ref{fig:stp_tpw_base_spot_K}). The cost of a filter pass is roughly fixed ($1+N_v$ closest-point queries per estimate), while the length of the walks in the first pass depends on $\delta$ and on the current shape.
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_K_tpi.pdf}
+			\caption{Time per iteration}
+		\end{subfigure}
+		\hspace{0.00\textwidth}
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_K_spw.pdf}
+			\caption{Steps per walk}
+		\end{subfigure}
+		\caption{Effect of the number of filter passes $K$ on the time per iteration and the steps per walk on Spot.}
+		\label{fig:stp_tpw_base_spot_K}
+	\end{figure}
+	Figure~\ref{fig:f} shows that \texttt{lfsMin} also affects the length of the walks: a larger lower bound gives larger balls in thin regions, hence fewer steps per walk and a shorter running time (Table~\ref{tab:time_of_tests}). From the point of view of efficiency, a large \texttt{lfsMin} would therefore be preferable, but it increases the error (Figure~\ref{fig:lfsOnBaseSpotError}) and violates the assumption $B_r(x) \subset \mathcal N(S)$ in more places. We prefer a lower error, since the running time can also be reduced by parallelization. In the tests we used $\texttt{lfsMin} = 0.06$.
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_lfs_tpi.pdf}
+			\caption{Time per iteration}
+		\end{subfigure}
+		\hspace{0.00\textwidth}
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_lfs_spw.pdf}
+			\caption{Steps per walk}
+		\end{subfigure}
+		\caption{Effect of \texttt{lfsMin} on the time per iteration and the steps per walk on Spot.}
+		\label{fig:f}
+	\end{figure}
+	
+	Table~\ref{tab:time_of_tests} summarizes the total running time of the tests on Spot.
+	
+	\begin{table}[H]
+		\centering
+		\begin{tabular}{l l l l l}
+			\hline
+			Test & Time & Time (s) & Iterations & Sphericity  \\
+			\hline
+			$\delta = 5 \cdot 10^{-3}$ & 20 min 48 sec & 1248.1 & 125 & 0.9946 \\
+			$\delta = 1 \cdot 10^{-3}$ & 36 min 22 sec & 2182.2 & 175 & 0.9624 \\
+			$\delta = 5 \cdot 10^{-4}$ & 50 min 39 sec & 3038.7 & 250 & 0.9458 \\
+			$K = 1$ & 15 min 47 sec & 946.8 & 150 & 0.9874 \\
+			$K = 4$ & 28 min 21 sec & 1701.0 & 150 & 0.9954 \\
+			\texttt{lfsMin} $= 0.99$ & 30 min 59 sec & 1859.6 & 150 & 0.9952 \\
+			\texttt{lfsMin} $= 0.06$ & 32 min 2 sec & 1922.2 & 150 & 0.9956 \\
+			\texttt{lfsMin} $= 0.009$ & 38 min 3 sec & 2283.4 & 150 & 0.9946 \\
+			\hline
+		\end{tabular}
+		\caption{Running time of the tests on Spot.}
+		\label{tab:time_of_tests}
+	\end{table}
+	
+	
+	\section{Mesh health}
+	\label{meshHealt}
+	
+	We measured the quality of the mesh in two ways: by the angles of the triangles and by the number of flipped triangles, i.e.\ triangles whose normal points inwards. Table~\ref{tab:bad_triangles} shows that the triangles do not keep their angles during the flow, which we attribute mainly to the noise of the Monte Carlo estimates. The minimum angle is determined by a single triangle and is therefore noisy. The median of the per-triangle minimum angles barely changes, and only $0.2$--$2.2\%$ of the triangles become thin, so the damage is local. A smaller $\delta$ produces fewer thin triangles.
+	
+	\begin{table}[H]
+		\centering
+		\small
+		\begin{tabular}{l c c c c c c c}
+			\hline
+			Test & $\delta$ & $K$ & lfsMin & Iter. & Min.\ angle ($^\circ$) & Median ($^\circ$) & Thin ($\%$) \\
+			\hline
+			\multicolumn{8}{c}{\textit{Spot} \quad (original: min.\ $10.21^\circ$, median $39.0^\circ$, thin $0\%$)} \\
+			\hline
+			$\delta$ & $5\cdot10^{-3}$ & 5 & 0.06  & 125 & 0.46 & 34.5 & 1.62 \\
+			& $5\cdot10^{-4}$ & 5 & 0.06  & 250 & 0.73 & 30.8 & 1.30 \\[2pt]
+			$K$      & $5\cdot10^{-3}$ & 1 & 0.06  & 150 & 0.80 & 32.0 & 1.66 \\
+			& $5\cdot10^{-3}$ & 4 & 0.06  & 150 & 0.73 & 34.6 & 0.87 \\[2pt]
+			lfsMin   & $5\cdot10^{-3}$ & 5 & 0.99  & 150 & 0.25 & 34.8 & 1.30 \\
+			& $5\cdot10^{-3}$ & 5 & 0.009 & 150 & 0.42 & 34.0 & 2.17 \\
+			\hline
+			\multicolumn{8}{c}{\textit{Bunny} \quad (original: min.\ $20.71^\circ$, median $56.8^\circ$, thin $0\%$)} \\
+			\hline
+			$\delta$ & $5\cdot10^{-3}$ & 5 & 0.055 & 150 & 0.17 & 53.8 & 0.56 \\
+			& $5\cdot10^{-4}$ & 5 & 0.055 & 210 & 1.06 & 50.7 & 0.53 \\
+			& $5\cdot10^{-5}$ & 5 & 0.055 & 260 & 2.26 & 53.0 & 0.24 \\
+			\hline
+		\end{tabular}
+		\caption{Mesh quality at the final state. Min.\ angle: the smallest angle in the mesh. Median: the median of the per-triangle minimum angles. Thin: the percentage of triangles with minimum angle below $5^\circ$.}
+		\label{tab:bad_triangles}
+	\end{table}
 	
 	\begin{figure}[H]
 		\centering
@@ -954,247 +1092,281 @@
 			\includegraphics[width=\linewidth]{images/error_on_bunny_ear_wire.png}
 			\caption{Mesh/Wire view}
 		\end{subfigure}
-		\caption{The ear's of the Bunny visibly became badly meshed on $\delta = 5 \cdot 10^{-3}$}
+		\caption{The ears of the Bunny become badly meshed with $\delta = 5 \cdot 10^{-3}$.}
 		\label{fig:error_on_ears}
 	\end{figure}
 	
-	\section{Walk steps and time}
-	\label{wpsNtpw}
-	
-	The solver does two things in a iteration step, solving a low sample size PWoS estimate, and applying the filters. It is important to distinguish how each of these affect the time per iterations and also the whole running time of the flow. As it can be seen in Figures~\ref{fig:stp_tpw_base_spot} and~\ref{fig:stp_tpw_base_bunny}, in case of a lower value of $\delta$, time per iteration and steps per walk has a strong correlation.  
-	
+	The second measure is the percentage of flipped triangles. We classify a triangle as flipped if its normal points towards the centroid of the surface. On a non-convex surface, many triangles are classified as flipped already at the start, so this measure is only meaningful once the surface is nearly spherical (sphericity above about $0.9$). Figure~\ref{fig:flipped_base} shows that the percentage is high at the start and drops quickly as the surface becomes round (Section~\ref{convergance}). Later it rises again, because the noise of the estimates flips some triangles of the already round surface.
+
 	\begin{figure}[H]
 		\centering
-		\begin{subfigure}{0.45\textwidth}
+		\begin{subfigure}{0.49\textwidth}
 			\centering
-			\includegraphics[width=\linewidth]{images/spot_base_delta_tpi.png}
-			\caption{Time per iteration}
+			\includegraphics[width=\linewidth]{images/spot_base_delta_flipped.pdf}
+			\caption{Effect of $\delta$ on Spot}
+			\label{fig:spot_delta_flipped_base}
 		\end{subfigure}
-		\hspace{0.05\textwidth}
-		\begin{subfigure}{0.45\textwidth}
+		\begin{subfigure}{0.49\textwidth}
 			\centering
-			\includegraphics[width=\linewidth]{images/spot_base_delta_spw.png}
-			\caption{Steps per walk}
+			\includegraphics[width=\linewidth]{images/bunny_base_delta_flipped.pdf}
+			\caption{Effect of $\delta$ on the Bunny}
+			\label{fig:bunny_delta_flipped_base}
 		\end{subfigure}
-		\caption{How $\delta$ affects the time of iteration steps and steps/walk on Spot}
-		\label{fig:stp_tpw_base_spot}
+		\vspace{0.5em}
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_K_flipped.pdf}
+			\caption{Effect of $K$ on Spot}
+			\label{fig:spot_K_flipped_base}
+		\end{subfigure}
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_base_lfs_flipped.pdf}
+			\caption{Effect of \texttt{lfsMin} on Spot}
+			\label{fig:spot_lfs_flipped_base}
+		\end{subfigure}
+		\caption{Percentage of flipped triangles during the flow.}
+		\label{fig:flipped_base}
 	\end{figure}
 	
-	\begin{figure}[H]
-		\centering
-		\begin{subfigure}{0.45\textwidth}
-			\centering
-			\includegraphics[width=\linewidth]{images/bunny_base_delta_tpi.png}
-			\caption{Time per iteration}
-		\end{subfigure}
-		\hspace{0.05\textwidth}
-		\begin{subfigure}{0.45\textwidth}
-			\centering
-			\includegraphics[width=\linewidth]{images/bunny_base_delta_tpw.png}
-			\caption{Steps per walk}
-		\end{subfigure}
-		\caption{How $\delta$ affects the time of iteration steps and steps/walk on the Bunny}
-		\label{fig:stp_tpw_base_bunny}
-	\end{figure}
-	In case of a higher value of $\delta$, it can be seen, in Figure~\ref{fig:stp_tpw_base_spot_K}, that the number of filters takes the lead in "slowing" down the flow. This is due to the fact, that while the PWoS step (pass = 0), depends in $\delta$, hence a higher value makes it faster, the filter step's length is fixed. 
-	\begin{figure}[H]
-		\centering
-		\begin{subfigure}{0.45\textwidth}
-			\centering
-			\includegraphics[width=\linewidth]{images/spot_base_K_tpi.png}
-			\caption{Time per iteration}
-		\end{subfigure}
-		\hspace{0.05\textwidth}
-		\begin{subfigure}{0.45\textwidth}
-			\centering
-			\includegraphics[width=\linewidth]{images/spot_base_K_spw.png}
-			\caption{Steps per walk}
-		\end{subfigure}
-		\caption{How different amount of filters affects the time of iteration steps and steps/walk on Spot}
-		\label{fig:stp_tpw_base_spot_K}
-	\end{figure}
-	In Figure~\ref{fig:f} it can be seen that the lfsMin also changes the length of a walk. We already established that the best lfsMin value for Spot is $0.05 \pm \epsilon$ (and we chosen 0.06 in tests as can seen in \ref{tab:params_of_base}), yet it looks like here that an even lower value of delta would be better. This is true, only for efficiency, since throughout the walk, steps don't get really short in sharp edges, but a too low lfsMin value also increases the error seen in Figure~\ref{fig:lfsOnBaseSpotError}, and we favor less error, than efficiency, since the last one can be accelerated easily furthermore.
-	\begin{figure}[H]
-		\centering
-		\begin{subfigure}{0.45\textwidth}
-			\centering
-			\includegraphics[width=\linewidth]{images/spot_base_lfs_tpi.png}
-			\caption{Time per iteration}
-		\end{subfigure}
-		\hspace{0.05\textwidth}
-		\begin{subfigure}{0.45\textwidth}
-			\centering
-			\includegraphics[width=\linewidth]{images/spot_base_lfs_spw.png}
-			\caption{Steps per walk}
-		\end{subfigure}
-		\caption{How lfsMin affects the time of iteration steps and steps/walk on Spot}
-		\label{fig:f}
-	\end{figure}
-	
-	We also created a tabel to show how much time each solution took.
-	
-	\begin{table}[H]
-		\centering
-		\begin{tabular}{l l l l l}
-			\hline
-			Test & Time & Time (s) & iterations & sphericity  \\
-			\hline
-			\texttt{$\delta = 5 \cdot 10^{-3}$} & 20 min 48 sec & 1248,1 & 125 & 0,9946 \\
-			\texttt{$\delta = 1 \cdot 10^{-3}$} & 36 min 22 sec & 2182,2 & 175 & 0,9624 \\
-			\texttt{$\delta = 5 \cdot 10^{-4}$} & 50 min 39 sec & 3038,7 & 250 & 0,9458 \\
-			\texttt{K = 1} & 15 min 47 sec & 946,8 & 150 & 0,9874 \\
-			\texttt{K = 4} & 28 min 21 sec & 1701,0 & 150 & 0,9954 \\
-			\texttt{lfsMin = 0.99} & 30 min 59 sec & 1859,6 & 150 & 0,9952 \\
-			\texttt{lfsMin = 0.06} & 32 min 2 sec & 1922,2 & 150 & 0,9956 \\
-			\texttt{lfsMin = 0.009} & 38 min 3 sec & 2283,4 & 150 & 0,9946 \\
-			\hline
-		\end{tabular}
-		\caption{Parameters of the solver on Spot tests.}
-		\label{tab:time_of_tests}
-	\end{table}
-	
-	
-	\section{Mesh health}
-	\label{meshHealt}
-	
-	We measured mesh quality two ways. We checked the minimum angel of the mesh, and how many flipped triangles we have (here, flipped means, that a triangle points inwards). In the Figures~\ref{fig:mid_deg_delta_spot_bunny} and~\ref{fig:mid_deg_spot_k_lfs} below we can see, that during our flow the triangles don't keep their angel. This can be mainly due to the noise that the stochastic processes introduce.
-	
-	\begin{figure}[H]
-		\centering
-		\begin{subfigure}{0.45\textwidth}
-			\centering
-			\includegraphics[width=\linewidth]{images/spot_base_delta_mindeg.png}
-			\caption{Different values of $\delta$}
-		\end{subfigure}
-		\hspace{0.05\textwidth}
-		\begin{subfigure}{0.45\textwidth}
-			\centering
-			\includegraphics[width=\linewidth]{images/bunny_base_delta_mindeg.png}
-			\caption{Different values of $\delta$}
-		\end{subfigure}
-		\caption{How $\delta$ changes the minDeg on Spot (left) and the Bunny (right)}
-		\label{fig:mid_deg_delta_spot_bunny}
-	\end{figure}
-	
-	
-	\begin{figure}[H]
-		\centering
-		\begin{subfigure}{0.45\textwidth}
-			\centering
-			\includegraphics[width=\linewidth]{images/spot_base_K_mindeg.png}
-			\caption{Different number of filters}
-		\end{subfigure}
-		\hspace{0.05\textwidth}
-		\begin{subfigure}{0.45\textwidth}
-			\centering
-			\includegraphics[width=\linewidth]{images/spot_base_lfs_mindeg.png}
-			\caption{Different values of lfsMin}
-		\end{subfigure}
-		\caption{How the minDeg changes on Spot}
-		\label{fig:mid_deg_spot_k_lfs}
-	\end{figure}
-	
-	The other way besides degrees, to measure how bad our mesh is throughout the flow, is the flipped triangles. An example for these triangles can be seen in \ref{fig:error_on_ears}.
+	More filter passes clearly improve the mesh quality, because each filter pass averages the previous estimate over the neighbourhood of a vertex, which reduces the noise of the first pass. The results for \texttt{lfsMin} again show that both too small and too large values are harmful.
 	
 	\begin{figure}[H]
 		\centering
 		\begin{subfigure}[t]{0.45\textwidth}
 			\centering
 			\includegraphics[height=4cm, keepaspectratio]{images/spot_bad_triangles.png}
-			\caption{Bunch of flipped triangles where Spot's ear is}
+			\caption{Flipped triangles near the ear of Spot}
 		\end{subfigure}
 		\hspace{0.05\textwidth}
 		\begin{subfigure}[t]{0.45\textwidth}
 			\centering
 			\includegraphics[height=4cm, keepaspectratio]{images/bunny_bad_triangle.png}
-			\caption{The ear of the bunny flipped inside}
+			\caption{The ear of the Bunny turned inside out}
 		\end{subfigure}
-		\caption{Other examples of flipped triangles}
+		\caption{Examples of flipped triangles}
 		\label{fig:other_flipped_triangles}
 	\end{figure}
 	
-	Measuring flipped triangles are a bit tricky, because we can assume that in a original phase of a model there is triangles that point inside, because why couldn't they. For this reason, the percent of the flipped triangles only provides us useful information if the model are sphere like, because obviously on a sphere there shouldn't be any inwards pointing triangle even if the original model had. In the Figures below it can be seen, that the percent of the flipped triangles are high, but after than, the "rapid" transforming to the sphere begins, that we observed in section \ref{convergance}, that forces any originally inward pointing triangle to point outwards. However it can also make good triangles mess up and make them point inwards, which is why the trend is that the percent of flipped triangles starts to rise.
-
-	\begin{figure}[H]
+	\paragraph{Conformality.} The cMCF converges to a conformal map, so we also measured how far the map from the initial to the current surface is from conformal. For every triangle we computed the ratio of the singular values of the linear map from the initial to the current triangle, which is $1$ for a conformal map, and compared it with the deterministic flow. On Spot at $t = 0.1$, $9.6\%$, $12.7\%$ and $15.6\%$ of the triangles are stretched by more than $2{:}1$ for $\delta = 5\cdot10^{-3}$, $1\cdot10^{-3}$ and $5\cdot10^{-4}$, while in the deterministic flow almost none are. On the Bunny this percentage is about $8.5\%$ for all three time steps.
+	
+	Table~\ref{tab:global_K_lfs} shows that the number of filter passes and \texttt{lfsMin} affect the shape of the triangles and their position in opposite ways. More filter passes reduce the number of stretched triangles, but increase the accumulated error, and a large \texttt{lfsMin} gives the largest accumulated error. This suggests that the filters, which average the estimates over a ball of radius $R$, reduce the noise but introduce a systematic deviation that grows with the size of the balls.
+	
+	\begin{table}[H]
 		\centering
-		\includegraphics[scale=0.65]{images/spot_base_delta_flipped.png}
-		\caption{Affect of different values of $\delta$ used on Spot regarding flipped triangles}
-		\label{fig:spot_delta_flipped_base}
-	\end{figure}
+		\begin{tabular}{l c c c}
+			\hline
+			Test & Accumulated error & Median stretch & Stretched $>2{:}1$ \\
+			\hline
+			$K = 1$ & 3.57\% & 1.44 & 32.6\% \\
+			$K = 2$ & 4.24\% & 1.28 & 25.3\% \\
+			$K = 3$ & 4.97\% & 1.24 & 19.1\% \\
+			$K = 4$ & 5.74\% & 1.24 & 17.9\% \\
+			\hline
+			\texttt{lfsMin} $= 0.99$  & 10.10\% & 1.30 & 17.9\% \\
+			\texttt{lfsMin} $= 0.5$   & 10.27\% & 1.30 & 18.2\% \\
+			\texttt{lfsMin} $= 0.09$  & 6.62\%  & 1.23 & 15.0\% \\
+			\texttt{lfsMin} $= 0.05$  & 6.13\%  & 1.22 & 16.1\% \\
+			\texttt{lfsMin} $= 0.009$ & 5.80\%  & 1.24 & 21.4\% \\
+			\hline
+			Deterministic flow & -- & 1.10 & 0.0\% \\
+			\hline
+		\end{tabular}
+		\caption{Accumulated error and conformality on Spot with $\delta = 5\cdot10^{-3}$ after 150 iterations ($t = 0.75$). Stretch: ratio of the singular values of the map from the initial to the current triangle ($1$ for a conformal map).}
+		\label{tab:global_K_lfs}
+	\end{table}
 	
-	\begin{figure}[H]
-		\centering
-		\includegraphics[scale=0.65]{images/bunny_base_delta_flipped.png}
-		\caption{Affect of different values of $\delta$ used on the Bunny regarding flipped triangles}
-		\label{fig:bunny_delta_flipped_base}
-	\end{figure}
+	\section{Methods to improve the mesh quality}
 	
-	\begin{figure}[H]
-		\centering
-		\includegraphics[scale=0.65]{images/spot_base_K_flipped.png}
-		\caption{Affect of different number of filters used on Spot regarding flipped triangles}
-		\label{fig:spot_K_flipped_base}
-	\end{figure}
-	
-	\begin{figure}[H]
-		\centering
-		\includegraphics[scale=0.65]{images/spot_base_lfs_flipped.png}
-		\caption{Affect of different values of lfsMin used on Spot regarding flipped triangles}
-		\label{fig:spot_lfs_flipped_base}
-	\end{figure}
-	
-	As we can see, the number of filters used are definitely improving the quality, because it is not really a Monte Carlo step, so they don't introduce any noise, and lfsMin once again shows us, that over or under shooting it can affect the solver badly. 
-	
-	\section{Methods to improve solution}
-	
-	In this section we show two ways this solver can be improved.
+	In this section, we evaluate two simple strategies against mesh degeneration.
 	
 	\subsection{Delta cycle}
 	
-	The delta cycle as it's name says, not only uses one constant $\delta$ throughout the entire flow, but cycles between higher and lower values of $\delta$. The ideology of this approach was, that first a iteration step is done with a really big $\delta$, so it convergences faster, then the following few iterations are done with lower and lower values of delta, so it "smooths" out the mesh. The following test were done on Spot and the cycle was the following:
+	Instead of a constant time step, the delta cycle repeats a fixed sequence of decreasing time steps. The idea is that the first step of each cycle, with a large $\delta$, makes fast progress, while the following steps, with smaller and smaller values of $\delta$, smooth the mesh. We tested the cycle
 	\begin{equation}
 		\delta = \{5 \cdot 10^{-3}, 1 \cdot 10^{-3}, 5 \cdot 10^{-4}, 1 \cdot 10^{-4}, 5 \cdot 10^{-5}, 1 \cdot 10^{-5}, 5 \cdot 10^{-6}, 1 \cdot 10^{-6}, 5 \cdot 10^{-7}, 1 \cdot 10^{-7}\}
 	\end{equation}
-	before look at the graphs, it is important to note, that in case of the cycle, just every 10 (the length of the cycle) iteration was plotted, so it is readable, and also, these tests were done on Spot.
+	on Spot. In the figures, the cycle is plotted once per cycle (every 10th iteration) for readability.
 	
 	\begin{figure}[H]
 		\centering
-		\includegraphics[scale=0.65]{images/spot_cycle_spher.png}
-		\caption{Delta cycle between constant delta solutions regarding sphericity}
+		\includegraphics[scale=0.65]{images/spot_cycle_spher.pdf}
+		\caption{Sphericity of the delta cycle compared to constant time steps on Spot.}
 		\label{fig:spot_cycle_spher}
 	\end{figure}
 	
 	\begin{figure}[H]
 		\centering
-		\includegraphics[scale=0.65]{images/spot_cycle_error.png}
-		\caption{Delta cycle between constant delta solutions regarding error}
+		\includegraphics[scale=0.65]{images/spot_cycle_error.pdf}
+		\caption{Per-step error of the delta cycle compared to constant time steps on Spot.}
 		\label{fig:spot_cycle_error}
 	\end{figure}
 	
-	As we can see both the convergence and the error of this approach is moderate, but as it can be seen on Figure~\ref{fig:spot_cycle_time} the time it takes for iteration steps is enormous. To put it to perspective, for the green line ($\delta = 5 \cdot 10^{-4}$), which has similar convergence and error, the time it took to reach it's end was 3038s (50 min 39 sec), while to time it took for the cycle approach to reach it's end was 7226.6s (2 h 0 min 27 sec), hence this approach is not feasible.
+	Both the convergence and the error of the cycle lie between those of the constant time steps, but its running time is very long (Figure~\ref{fig:spot_cycle_time}). The constant time step $\delta = 5 \cdot 10^{-4}$ (green), which reaches a similar sphericity and error, took $3038.7$\,s (50 min 39 s), while the cycle took $7226.6$\,s (2 h 0 min 27 s). The steps with very small $\delta$ are the most expensive, so in this form the delta cycle is not practical.
 	
 	\begin{figure}[H]
 		\centering
-		\begin{subfigure}{0.45\textwidth}
+		\begin{subfigure}{0.49\textwidth}
 			\centering
-			\includegraphics[width=\linewidth]{images/spot_cycle_tpi.png}
-			\caption{time per iteration}
+			\includegraphics[width=\linewidth]{images/spot_cycle_tpi.pdf}
+			\caption{Time per iteration}
 		\end{subfigure}
-		\hspace{0.05\textwidth}
-		\begin{subfigure}{0.45\textwidth}
+		\hspace{0.00\textwidth}
+		\begin{subfigure}{0.49\textwidth}
 			\centering
-			\includegraphics[width=\linewidth]{images/spot_cycle_spw.png}
+			\includegraphics[width=\linewidth]{images/spot_cycle_spw.pdf}
 			\caption{Steps per walk}
 		\end{subfigure}
-		\caption{Delta cycle between constant delta solutions regarding the time}
+		\caption{Running time of the delta cycle compared to constant time steps on Spot.}
 		\label{fig:spot_cycle_time}
 	\end{figure}
 	
-	\subsection{"Smoothing" iterations}
+	\subsection{Smoothing iterations}
+	\label{sec:smoothing}
 	
-	Inspired from the cycle's ideology of "smoothing" iterations, we approached this method a little different. Instead of constantly changing between different values of $\delta$ to smooth out the mesh, we just took the already solved flow's on Spot, ran a few more iterations, with gradually descending $\delta$'s.
+	Based on the observations with the delta cycle, we also tried applying the small time steps only once, at the end of the flow: we continued each constant-$\delta$ run on Spot with a few iterations with decreasing time steps,
+	\begin{equation}
+		\delta = \{5 \cdot 10^{-4}, 5 \cdot 10^{-5}, 5 \cdot 10^{-6}, 5 \cdot 10^{-7}, 5 \cdot 10^{-8}, 5 \cdot 10^{-9}\}
+	\end{equation}
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_repaired_delta_spher.pdf}
+		\caption{Sphericity before and after the smoothing iterations on Spot.}
+		\label{fig:spot_r_spher}
+	\end{figure}
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_repaired_delta_error.pdf}
+		\caption{Per-step error before and after the smoothing iterations on Spot.}
+		\label{fig:spot_r_error}
+	\end{figure}
 	
-	\section{Bonus: cMCF on non-genus-zero geometry}
+	The smoothing iterations do not reduce the sphericity (Figure~\ref{fig:spot_r_spher}), and their per-step error stays low despite the degraded input mesh (Figure~\ref{fig:spot_r_error}). The drop of the error to almost zero at the end only reflects that a step with a very small $\delta$ barely moves the surface. At the same time, the smoothing iterations repair the degraded triangles very effectively: on Spot with $\delta = 5\cdot10^{-3}$, the minimum angle increases from $0.46^\circ$ to $7.58^\circ$ (Figures~\ref{fig:spot_r_mindeg} and~\ref{fig:smoothing}).
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_repaired_delta_mindeg.pdf}
+		\caption{Minimum angle before and after the smoothing iterations on Spot.}
+		\label{fig:spot_r_mindeg}
+	\end{figure}
+	
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_repaired_delta_tpi.pdf}
+			\caption{Time per iteration}
+		\end{subfigure}
+		\hspace{0.00\textwidth}
+		\begin{subfigure}{0.49\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/spot_repaired_delta_spw.pdf}
+			\caption{Steps per walk}
+		\end{subfigure}
+		\caption{Running time of the smoothing iterations on Spot.}
+		\label{fig:spot_smoothing_time}
+	\end{figure}
+	
+	The smoothing iterations are also expensive, but much cheaper than the cycle. On Spot with $\delta = 5 \cdot 10^{-3}$, the flow itself took $1248.1$\,s (20 min 48 s) and the smoothing $1184.1$\,s (19 min 44 s), about 40 minutes in total, compared to two hours for the delta cycle. The result is also better, because the smoothing is applied to a surface that is already nearly spherical. The last two steps take $892$\,s, $75\%$ of the smoothing time, but they only reduce the percentage of stretched triangles from $4.0\%$ to $2.2\%$ (Table~\ref{tab:smoothing_steps}), so dropping them would cut the cost of the smoothing by a factor of four.
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.65]{images/spot_repaired_flipped.pdf}
+		\caption{Percentage of flipped triangles before and after the smoothing iterations on Spot.}
+		\label{fig:spot_r_flipped}
+	\end{figure}
+	Figure~\ref{fig:spot_r_flipped} shows that the smoothing removes all flipped triangles: at the end of every test, no triangle is flipped.
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.4\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/frame_0125_0.png}
+			\caption{Iteration 125}
+		\end{subfigure}
+		\hspace{0.00\textwidth}
+		\begin{subfigure}{0.4\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/frame_0128_3.png}
+			\caption{Iteration 128}
+		\end{subfigure}
+		\vspace{1em}
+		\begin{subfigure}{0.4\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/frame_0130_5.png}
+			\caption{Iteration 130}
+		\end{subfigure}
+		\hspace{0.00\textwidth}
+		\begin{subfigure}{0.4\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/frame_0131_6.png}
+			\caption{Iteration 131}
+		\end{subfigure}
+		
+		\caption{The mesh of Spot before (iteration 125) and during the smoothing iterations.}
+		\label{fig:smoothing}
+	\end{figure}
+	
+	Table~\ref{tab:smoothing_steps} shows the effect of the individual smoothing steps. Most of the improvement happens in the steps with $\delta = 5\cdot10^{-6}$ and $5\cdot10^{-7}$, where the percentage of stretched triangles drops from $14.3\%$ to $4.0\%$. In these steps the deterministic flow barely moves the surface, so the repair is most likely caused by the estimator itself: the walks terminate almost immediately, and the filter passes average the positions over a small neighbourhood of each vertex. Accordingly, the smoothing improves the shape of the triangles, but not their position: the accumulated error stays at $5.4\%$.
+	
+	\begin{table}[H]
+		\centering
+		\small
+		\begin{tabular}{r c r c c c}
+			\hline
+			Iter. & $\delta$ & Time (s) & Median stretch & Stretched $>2{:}1$ & Accumulated error \\
+			\hline
+			125 & --              & --    & 1.24 & 16.2\% & 5.39\% \\
+			126 & $5\cdot10^{-4}$ & 23.9  & 1.22 & 14.2\% & 5.41\% \\
+			127 & $5\cdot10^{-5}$ & 40.6  & 1.22 & 14.3\% & 5.41\% \\
+			128 & $5\cdot10^{-6}$ & 58.6  & 1.20 & 9.0\%  & 5.41\% \\
+			129 & $5\cdot10^{-7}$ & 169.4 & 1.19 & 4.0\%  & 5.42\% \\
+			130 & $5\cdot10^{-8}$ & 349.7 & 1.19 & 2.5\%  & 5.42\% \\
+			131 & $5\cdot10^{-9}$ & 542.0 & 1.19 & 2.2\%  & 5.42\% \\
+			\hline
+		\end{tabular}
+		\caption{Effect of the individual smoothing iterations on Spot after the flow with $\delta = 5\cdot10^{-3}$. In the deterministic flow the median stretch is $1.12$ and no triangle is stretched by more than $2{:}1$.}
+		\label{tab:smoothing_steps}
+	\end{table}
+	
+	\section{Bonus: cMCF on surfaces of higher genus}
+	\label{sec:genus}
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.3\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/knot_frame_0000.png}
+		\end{subfigure}
+		\begin{subfigure}{0.3\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/knot_frame_0040.png}
+		\end{subfigure}
+		\begin{subfigure}{0.3\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/knot_frame_0107.png}
+		\end{subfigure}
+		\caption[cMCF on the genus-1 Knot model]{cMCF on the genus-1 model Knot (\texttt{1-cgal}) \cite{tuealga_meshes}}
+		\label{fig:knot}
+	\end{figure}
+		
+	\begin{figure}[H]
+		\centering
+		\begin{subfigure}{0.3\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/kiss_frame_0000.png}
+		\end{subfigure}
+		\begin{subfigure}{0.3\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/kiss_frame_0005.png}
+		\end{subfigure}
+		\begin{subfigure}{0.3\textwidth}
+			\centering
+			\includegraphics[width=\linewidth]{images/kiss_frame_0060.png}
+		\end{subfigure}
+		\caption[cMCF on the genus-3 Kiss model]{cMCF on the genus-3 model Kiss (\texttt{gao}) \cite{tuealga_meshes}}
+		\label{fig:genusnon0}
+	\end{figure}
+	
+	The cMCF is defined for any closed surface, but only a genus-zero surface can become a sphere. Figures~\ref{fig:knot} and~\ref{fig:genusnon0} show what happens to surfaces of higher genus. The Knot (genus 1) flattens into a thin ribbon: its minimum angle drops from $24.6^\circ$ to $0.02^\circ$ by iteration 107. The Kiss (genus 3) quickly loses its details and becomes a torus-like shape. In both cases the flow keeps running, but it moves towards a degenerate surface, not towards a sphere.
 
 	
 	
@@ -1203,10 +1375,22 @@
 	% =====================================================================
 	\chapter{Discussion and conclusion}
 	\label{ch:summary}
-	
-	\section{Limitations}
+
 	\section{Future work}
+	
+	Although the cMCF can be solved with WoS, the noise of the Monte Carlo estimates damages the quality of the mesh. We see several directions that could address this.
+	
+	The first is an \textit{adaptive time step}. Since $\delta$ strongly affects both the speed of the flow and the quality of the mesh, it could be chosen adaptively: the flow could start with a small $\delta$, increase it while the shape changes slowly and the estimated error is small, and decrease it when the error or the degradation of the mesh grows. Note that a smaller $\delta$ reduces the absolute error of a step, but not necessarily the error relative to the displacement of the step, so the criterion has to be chosen carefully.
+	
+	The second is a \textit{local majorant}. As the surface approaches the sphere, the area ratio, and therefore $\sigma$, varies strongly over the surface. With the global majorant $\bar{\sigma} = \max \sigma$, the probability $p = \sigma / \bar{\sigma}$ of a real collision is very small in most regions, so most collisions are null collisions, which only make the walks longer (Section~\ref{sec:method-rr}). Delta tracking only requires $\bar{\sigma} \ge \sigma$ inside the current ball, so the majorant can be chosen locally, for example as the maximum of $\sigma$ over the vertices near the centre of the ball. This requires neither a partition of the surface into regions nor boundaries between them: the walks can move freely, and only the majorant used in each step changes.
+	
+	The third direction is a different surface walk. PWoS requires a medial axis, a lower bound on the ball radius and a closest-point query in every step, and the closest-point queries dominate the running time. A walk that stays on the surface, for example a random walk along the edges of the mesh, could avoid these costs; developing such a method is left for future work. Finally, the walks are independent, so the solver could be parallelized on the GPU, and the sequence of smoothing steps could be shortened, since the last two steps contribute little to the repair (Table~\ref{tab:smoothing_steps}).
+	
 	\section{Summary}
+	
+	We presented a Monte Carlo method for the conformalized mean curvature flow based on Walk on Spheres. The key observation is that the operator of the cMCF is defined with respect to the metric of the initial surface, so after a semi-implicit time discretization every step is a screened Poisson equation on the fixed original surface, with a spatially varying screening coefficient. We solved these equations with projected walks on spheres and delta tracking, and reduced the noise with mean value filtering and antithetic walk pairs. The method makes genus-zero surfaces converge to the sphere, but the noise degrades the mesh, a few final iterations with decreasing time steps repair the mesh at a moderate cost.
+	
+	The method is much slower than a deterministic solver of the same discretization, which solves one sparse linear system per step (Table~\ref{tab:time_of_tests}). Its advantages are that it needs no linear system, the solution can be evaluated at individual points, and the walks are independent, so it is trivially parallelizable, which could reduce the running time considerably. More generally, the same approach applies to geometric flows whose operator is defined on a fixed reference surface.
 	
 	
 	% Acknowledgements (optional)
@@ -1218,86 +1402,7 @@
 	\appendix
 	
 	\chapter{Supplemental Notes}
-	\label{app:supplemental}
-	
-	\section{Kakutani's principle}
-	\label{app:kakutani}
-	
-	Consider the Feynman--Kac formula that links PDEs and stochastic processes. First consider the PDE
-	\begin{equation}
-		\label{fynman}
-		\frac{\partial u}{\partial t} + \mu(x,t)\frac{\partial u}{\partial x} + \frac{1}{2}\sigma^2(x,t)\frac{\partial^2 u}{\partial x^2} - V(x,t)u + f(x,t) = 0
-	\end{equation}
-	\[
-	u(x,T) = \psi(x), \qquad t \in [0,T]
-	\]
-	and the stochastic differential equation
-	\begin{equation}
-		\label{stochastic}
-		dX_t = \mu(X_t, t) \, dt + \sigma(X_t,t) dW_t
-	\end{equation}
-	where $W_t$ is the Wiener process. The Feynman--Kac formula is then:
-	
-	\begin{equation}
-		\label{feynmann--kacc}
-		u(x,t) = \mathbb{E}\left[e^{-\int_{t}^{T} V(X_s,s) \, ds} \psi(x_T) + \int_{t}^{T} e^{-\int_{t}^{s} V(X_r,r) \, dr} f(X_s, s) \, ds \Bigg| X_t = x\right]
-	\end{equation}
-	
-	In case of a Laplace equation with Dirichlet boundary values
-	
-	\begin{equation}
-		\begin{cases}
-			\Delta u(x) = 0, & x \in \Omega, \\
-			u(x) = g(x) & x \in \partial \Omega 
-		\end{cases}
-	\end{equation}
-	
-	we have the following:
-	
-	\[
-	\mu(x,t) = 0, \quad \sigma(x,t) = \sqrt{2}, \quad V(x,t) = 0, \quad f(x,t) = 0
-	\]
-	
-	the equation \ref{fynman} is than simplifies to
-	
-	\begin{equation}
-		\frac{\partial u}{\partial t} + \Delta u = 0
-	\end{equation}
-	and since the equation is not time dependent it continues to simplifies $\Delta u = 0$. The solution to $X_t$ from equation \ref{stochastic} is then just $X_t = x + \sqrt{2} W_t$. Now let $\tau_{\Omega} := \inf\left\{ t \geq 0: X_t \notin \Omega \right\}$ be the first time the Brownian motion leaves the domain. Substituting everything into \ref{feynmann--kacc} using $\tau_{\Omega}$ yields:
-
-	\begin{equation}
-		u(x) = \mathbb{E}\left[g(X_{\tau_{\Omega}})\right]
-	\end{equation}
-	
-	\section{cMFC to screened Poisson equation}
-	\label{app:cmfctopoi}
-	
-	To transform the equation \ref{cMFC} to a screened Poisson equation \ref{screenedPoi} we need to use the semi-implicit Euler method. The full derivation using our already defined notation \ref{alpha} is than the following:
-	
-	\begin{equation}
-		\frac{\partial \Phi_t}{\partial t} = \alpha(x,t) \Delta_{g_0} \Phi_t,
-	\end{equation}
-
-	discretizing the time derivative using the semi-implicit Euler method:
-	\begin{equation}
-		\frac{\Phi^{n+1} - \Phi^n}{\Delta t} = \alpha(x,t) \Delta_{g_0} \Phi^{n+1},
-	\end{equation}
-
-	let $\Delta t$ be $\delta$, then multiplying with it and rearranging the equation
-	\begin{equation}
-		\Phi^{n+1} - \delta \alpha(x,t)\Delta\Phi^{n+1} = \Phi^n.
-	\end{equation}
-
-	In the next step we divide with $\delta \alpha(x,t)$ which yields $\frac{1}{\delta \alpha(x,t)}$ in both sides of the equation, so let's just call it $\sigma(x,t)$
-	\begin{equation}
-		\sigma(x,t)\Phi^{n+1} - \Delta\Phi^{n+1} = \sigma(x,t)\Phi^n.
-	\end{equation}
-
-	To keep ourselves to the notation defined in \ref{screenedPoi}, we multiply each side with $-1$ and we can also denote the right side of the equation $\sigma(x,t)\Phi^n$ as $f(x,t,\Phi)$. Which yields as our final screened Poisson equation with varying screening term:
-	\begin{equation}
-		\label{app:finalcmfctopoi}
-		\left[\Delta - \sigma(x,t)\right]\Phi^{n+1} = -f(x,t,\Phi)
-	\end{equation}
+	\label{app:supplemental}	
 	
 	\section{The coefficient $c_r$ of the screened mean value formula}
 	\label{app:cr}
@@ -1327,7 +1432,7 @@
 	find below is \emph{the} solution.)
 	
 	\paragraph{Step 3: solving for $h$.}
-	By symmetry $h=h(\rho)$ with $\rho=\|y-x\|$. The Laplacian of a radial function in
+	By symmetry $h=h(\rho)$ with $\rho=\|y-x\|$. Let $s=\sqrt{\sigma}$. The Laplacian of a radial function in
 	$\mathbb{R}^3$ is $h''+\frac{2}{\rho}h'$, so
 	\begin{equation}
 		h''+\frac{2}{\rho}h'-s^2h=0 .
@@ -1368,10 +1473,10 @@
 	%\addcontentsline{toc}{chapter}{\lstalgorithmlabel}
 	%\listofalgorithms
 	
-	%\cleardoublepage
-	%\phantomsection
-	%\addcontentsline{toc}{chapter}{\lsttablelabel}
-	%\listoftables
+	\cleardoublepage
+	\phantomsection
+	\addcontentsline{toc}{chapter}{\lsttablelabel}
+	\listoftables
 	
 	%\cleardoublepage
 	%\phantomsection
