@@ -599,7 +599,6 @@ $Eu(x)=u(\operatorname{cp}_S(x))$. It is constant in the normal direction, and b
 	\section{Pre-solver calculations}
 	
 	Before starting the iteration loop, the solver does some pre-calculations. The first one is the vertex area $A_0(x_i)$ of the original surface. The function \texttt{vertexAreas} gives every vertex one third of the area of each triangle it belongs to, so the areas of the vertices add up to the area of the surface. The total area $A_{\mathrm{target}} = \sum_i A_0(x_i)$  is saved, because the normalization at the end of every iteration rescales the shape back to it.
-	\texttt{vertexAreas} gives every vertex one third of the area of each triangle it belongs to, so the areas of the vertices add up to the area of the surface. The total area (\texttt{targetArea}) is saved, because the normalization at the end of every iteration rescales the shape back to it.
 	
 	Everything else that depends on the geometry is built by \texttt{rebuildBase}:
 	\begin{enumerate}

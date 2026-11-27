@@ -82,7 +82,7 @@
 		\newcommand{\suplabel}{Supervisor}
 		\newcommand{\supslabel}{Supervisors}
 
-		\newcommand{\deflabel}{Definiton}
+		\newcommand{\deflabel}{Definition}
 		\newcommand{\theolabel}{Theorem}
 		\newcommand{\remlabel}{Remark}
 		\newcommand{\notelabel}{Note}
